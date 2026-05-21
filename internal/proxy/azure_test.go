@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -150,7 +151,7 @@ func TestAzureSetHeaders(t *testing.T) {
 	}
 }
 
-// ---- TransformRequest (passthrough) -----------------------------------------
+// ---- TransformRequest --------------------------------------------------------
 
 func TestAzureTransformRequest_Passthrough(t *testing.T) {
 	t.Parallel()
@@ -185,6 +186,64 @@ func TestAzureTransformRequest_Passthrough(t *testing.T) {
 			}
 			if string(got) != tc.input {
 				t.Errorf("TransformRequest() = %q, want %q (passthrough unchanged)", got, tc.input)
+			}
+		})
+	}
+}
+
+func TestAzureTransformRequest_GPT5MaxTokensCompatibility(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model Model
+		input string
+	}{
+		{
+			name:  "matches model name",
+			model: Model{Name: "gpt-5.4", AzureDeployment: "prod-chat"},
+			input: `{"model":"gpt-5.4","messages":[{"role":"user","content":"Hi"}],"max_tokens":512}`,
+		},
+		{
+			name:  "matches deployment name",
+			model: Model{Name: "default", AzureDeployment: "gpt-5.4"},
+			input: `{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":512}`,
+		},
+		{
+			name:  "max_completion_tokens wins when both are provided",
+			model: Model{Name: "gpt-5.4", AzureDeployment: "gpt-5.4"},
+			input: `{"model":"gpt-5.4","messages":[{"role":"user","content":"Hi"}],"max_tokens":512,"max_completion_tokens":1024}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := &AzureAdapter{}
+			got, err := a.TransformRequest([]byte(tc.input), tc.model)
+			if err != nil {
+				t.Fatalf("TransformRequest() error = %v, want nil", err)
+			}
+
+			var doc map[string]json.RawMessage
+			if err := json.Unmarshal(got, &doc); err != nil {
+				t.Fatalf("unmarshal transformed body: %v", err)
+			}
+			if _, ok := doc["max_tokens"]; ok {
+				t.Fatal("max_tokens was not removed")
+			}
+
+			var maxCompletionTokens int
+			if err := json.Unmarshal(doc["max_completion_tokens"], &maxCompletionTokens); err != nil {
+				t.Fatalf("unmarshal max_completion_tokens: %v", err)
+			}
+			want := 512
+			if tc.name == "max_completion_tokens wins when both are provided" {
+				want = 1024
+			}
+			if maxCompletionTokens != want {
+				t.Errorf("max_completion_tokens = %d, want %d", maxCompletionTokens, want)
 			}
 		})
 	}

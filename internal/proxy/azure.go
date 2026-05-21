@@ -3,17 +3,40 @@ package proxy
 import (
 	"net/http"
 	"strings"
+
+	"github.com/voidmind-io/voidllm/internal/jsonx"
 )
 
-// AzureAdapter adapts requests for the Azure OpenAI Service. Azure speaks the
-// OpenAI wire format natively, so only the URL construction and authentication
-// header need to change. Request and response bodies are forwarded unchanged.
+// AzureAdapter adapts requests for the Azure OpenAI Service. Most Azure models
+// speak the OpenAI wire format natively, so only URL construction and auth
+// headers change. Newer GPT-5 deployments reject max_tokens and require
+// max_completion_tokens instead, so that field is normalized when needed.
 type AzureAdapter struct{}
 
-// TransformRequest returns the body unchanged; Azure uses the OpenAI request
-// format without modification.
-func (a *AzureAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
-	return body, nil
+// TransformRequest returns the body unchanged for most Azure deployments. GPT-5
+// style deployments require max_completion_tokens instead of max_tokens.
+func (a *AzureAdapter) TransformRequest(body []byte, model Model) ([]byte, error) {
+	if !azureRequiresMaxCompletionTokens(model) {
+		return body, nil
+	}
+
+	var doc map[string]jsonx.RawMessage
+	if err := jsonx.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	if maxTokens, ok := doc["max_tokens"]; ok {
+		if _, hasMaxCompletionTokens := doc["max_completion_tokens"]; !hasMaxCompletionTokens {
+			doc["max_completion_tokens"] = maxTokens
+		}
+		delete(doc, "max_tokens")
+	}
+	return jsonx.Marshal(doc)
+}
+
+func azureRequiresMaxCompletionTokens(model Model) bool {
+	name := strings.ToLower(model.Name)
+	deployment := strings.ToLower(model.AzureDeployment)
+	return strings.HasPrefix(name, "gpt-5") || strings.HasPrefix(deployment, "gpt-5")
 }
 
 // TransformURL builds the Azure OpenAI deployment URL from the base URL and

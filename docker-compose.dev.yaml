@@ -4,6 +4,8 @@ services:
       context: .
       args:
         VERSION: dev
+    depends_on:
+      - ollama
     ports:
       - "8080:8080"
     volumes:
@@ -13,6 +15,16 @@ services:
     environment:
       - VOIDLLM_ADMIN_KEY=${VOIDLLM_ADMIN_KEY}
       - VOIDLLM_ENCRYPTION_KEY=${VOIDLLM_ENCRYPTION_KEY}
+      - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY}
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
 
 volumes:
   voidllm_data:
+  ollama_data:
