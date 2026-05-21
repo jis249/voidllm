@@ -123,7 +123,7 @@ function OrgSettingsForm({ org, readOnly }: OrgSettingsFormProps) {
           label="Name"
           value={form.name}
           onChange={patch('name')}
-          placeholder="e.g. VoidMind GmbH"
+          placeholder="e.g. wai Labs"
           error={nameError}
           disabled={readOnly || updateOrg.isPending}
         />

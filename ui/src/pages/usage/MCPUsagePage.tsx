@@ -373,7 +373,7 @@ export default function MCPUsagePage() {
               exportData(
                 sortedData as unknown as Record<string, unknown>[],
                 MCP_EXPORT_HEADERS,
-                `voidllm-mcp-usage-${groupBy}`,
+                `wai-mcp-usage-${groupBy}`,
                 'csv',
               )
             }
@@ -391,7 +391,7 @@ export default function MCPUsagePage() {
               exportData(
                 sortedData as unknown as Record<string, unknown>[],
                 MCP_EXPORT_HEADERS,
-                `voidllm-mcp-usage-${groupBy}`,
+                `wai-mcp-usage-${groupBy}`,
                 'json',
               )
             }

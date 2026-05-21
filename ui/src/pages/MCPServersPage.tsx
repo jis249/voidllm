@@ -840,7 +840,7 @@ function cn(...classes: (string | false | undefined | null)[]): string {
 function getBaseUrl(): string {
   const origin = window.location.origin
   if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    return 'https://your-voidllm-domain'
+    return 'https://your-wai-domain'
   }
   return origin
 }
@@ -851,7 +851,7 @@ function generateMCPConfig(alias: string, isCodeMode?: boolean): string {
     return JSON.stringify(
       {
         mcpServers: {
-          'voidllm-code': {
+          'wai-code': {
             url: `${base}/api/v1/mcp`,
             headers: { Authorization: 'Bearer <your-api-key>' },
           },

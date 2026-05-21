@@ -2,18 +2,18 @@
 
 @theme {
   /* Backgrounds */
-  --color-bg-primary: #0a0a0f;
-  --color-bg-secondary: #12121a;
-  --color-bg-tertiary: #1a1a24;
+  --color-bg-primary: #061019;
+  --color-bg-secondary: #0b1724;
+  --color-bg-tertiary: #122338;
 
   /* Text */
-  --color-text-primary: #e2e8f0;
-  --color-text-secondary: #a1afc4;
-  --color-text-tertiary: #8494a8;
+  --color-text-primary: #eef6ff;
+  --color-text-secondary: #b8c7d9;
+  --color-text-tertiary: #8193a8;
 
   /* Brand */
-  --color-accent: #8b5cf6;
-  --color-accent-glow: rgba(139, 92, 246, 0.4);
+  --color-accent: #22d3ee;
+  --color-accent-glow: rgba(34, 211, 238, 0.38);
 
   /* Status */
   --color-success: #22c55e;
@@ -34,9 +34,10 @@
 }
 
 :root {
-  --gradient-start: #6366f1;
-  --gradient-mid: #8b5cf6;
-  --gradient-end: #a855f7;
+  --gradient-start: #22d3ee;
+  --gradient-mid: #38bdf8;
+  --gradient-end: #818cf8;
+  --accent-glow: var(--color-accent-glow);
 }
 
 @layer base {
@@ -48,10 +49,18 @@
 body {
   font-family: var(--font-sans);
   color: var(--color-text-primary);
-  background: var(--color-bg-primary);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.14), transparent 34rem),
+    radial-gradient(circle at 88% 8%, rgba(129, 140, 248, 0.12), transparent 30rem),
+    linear-gradient(180deg, #07111c 0%, var(--color-bg-primary) 48%, #040a12 100%);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(34, 211, 238, 0.28);
+  color: var(--color-text-primary);
 }
 
 .gradient-text {

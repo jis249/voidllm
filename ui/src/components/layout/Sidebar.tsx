@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { NavLink, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../../hooks/useMe'
-import { useLicense } from '../../hooks/useLicense'
 import { LOCAL_STORAGE_KEY } from '../../lib/constants'
 
 function formatRole(role?: string): string {
@@ -131,18 +130,6 @@ function IconDollar() {
   )
 }
 
-function IconClipboard() {
-  return (
-    <svg {...iconProps}>
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-      <line x1="8" y1="10" x2="16" y2="10" />
-      <line x1="8" y1="14" x2="16" y2="14" />
-      <line x1="8" y1="18" x2="12" y2="18" />
-    </svg>
-  )
-}
-
 function IconShield() {
   return (
     <svg {...iconProps}>
@@ -187,7 +174,7 @@ function IconPlug() {
   )
 }
 
-function buildNavigation(hasFeature: (f: string) => boolean): NavGroup[] {
+function buildNavigation(): NavGroup[] {
   return [
     {
       label: 'Overview',
@@ -209,15 +196,7 @@ function buildNavigation(hasFeature: (f: string) => boolean): NavGroup[] {
       label: 'Analytics',
       items: [
         { label: 'Usage', path: '/usage', icon: <IconBarChart /> },
-        { label: 'Cost Reports', path: '/cost-reports', icon: <IconDollar />, locked: !hasFeature('cost_reports') },
-      ],
-    },
-    {
-      label: 'Security',
-      minRole: 'org_admin',
-      items: [
-        { label: 'Audit Log', path: '/audit-log', icon: <IconClipboard />, locked: !hasFeature('audit_logs') },
-        { label: 'SSO Config', path: '/sso', icon: <IconShield />, locked: !hasFeature('sso_oidc') },
+        { label: 'Cost Reports', path: '/cost-reports', icon: <IconDollar /> },
       ],
     },
     {
@@ -260,15 +239,12 @@ function LockIcon() {
 
 export function Sidebar() {
   const { data } = useMe()
-  const { data: license } = useLicense()
   const queryClient = useQueryClient()
 
   const userRole = data?.role ?? 'member'
-  // Treat loading state as unlocked to avoid flicker — page-level guards enforce the real check
-  const hasFeature = (f: string): boolean => !license ? true : license.features.includes(f)
 
   const visibleGroups = useMemo(() => {
-    const navigation = buildNavigation(hasFeature)
+    const navigation = buildNavigation()
     return navigation
       .filter(group => hasMinRole(userRole, group.minRole))
       .map(group => ({
@@ -276,19 +252,18 @@ export function Sidebar() {
         items: group.items.filter(item => hasMinRole(userRole, item.minRole)),
       }))
       .filter(group => group.items.length > 0)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole, license])
+  }, [userRole])
 
   return (
     <aside
       aria-label="Main navigation"
-      className="w-[260px] bg-bg-secondary border-r border-white/5 flex flex-col fixed h-screen z-50"
+      className="w-[260px] bg-bg-secondary/95 border-r border-white/10 flex flex-col fixed h-screen z-50 shadow-[12px_0_40px_rgba(0,0,0,0.22)]"
     >
       {/* Logo */}
       <div className="px-4 py-4 border-b border-white/5 shrink-0">
         <a href="/" className="flex items-center gap-2 no-underline">
-          <img src="/logo.svg" alt="VoidLLM" className="h-7 w-7" />
-          <span className="gradient-text text-xl font-bold">VoidLLM</span>
+          <img src="/logo.svg" alt="wai" className="h-7 w-7" />
+          <span className="gradient-text text-xl font-bold">wai</span>
         </a>
       </div>
 
@@ -324,7 +299,7 @@ export function Sidebar() {
                       [
                         'flex items-center gap-3 px-3 py-2 rounded-lg text-sm no-underline transition-all duration-200',
                         isActive
-                          ? 'bg-accent/15 text-accent'
+                          ? 'bg-accent/15 text-accent shadow-[inset_3px_0_0_var(--color-accent)]'
                           : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
                       ].join(' ')
                     }

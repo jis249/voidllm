@@ -208,6 +208,45 @@ func (d *DB) ListUsers(ctx context.Context, cursor string, limit int, includeDel
 	return users, nil
 }
 
+// GetUserDisplayNames returns active user display names keyed by user ID.
+// Unknown or deleted users are omitted from the result.
+func (d *DB) GetUserDisplayNames(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+
+	p := d.dialect.Placeholder
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for i, id := range ids {
+		placeholders = append(placeholders, p(i+1))
+		args = append(args, id)
+	}
+
+	query := "SELECT id, display_name FROM users WHERE deleted_at IS NULL AND id IN (" +
+		strings.Join(placeholders, ", ") + ")"
+
+	rows, err := d.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("GetUserDisplayNames query: %w", err)
+	}
+	defer rows.Close()
+
+	names := make(map[string]string, len(ids))
+	for rows.Next() {
+		var id, displayName string
+		if err := rows.Scan(&id, &displayName); err != nil {
+			return nil, fmt.Errorf("GetUserDisplayNames scan: %w", err)
+		}
+		names[id] = displayName
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetUserDisplayNames rows: %w", err)
+	}
+
+	return names, nil
+}
+
 // UpdateUser applies a partial update to an active user.
 // Only non-nil fields in params are written. If all fields are nil the record
 // is returned unchanged without issuing an UPDATE.

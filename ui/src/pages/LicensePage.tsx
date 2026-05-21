@@ -312,7 +312,7 @@ export default function LicensePage() {
         setLicenseKey('')
         toast({
           variant: 'success',
-          message: 'License saved. Restart VoidLLM to activate.',
+          message: 'License saved. Restart wai to activate.',
         })
       },
       onError: (err) => {
@@ -327,7 +327,7 @@ export default function LicensePage() {
     <>
       <PageHeader
         title="License"
-        description="Manage your VoidLLM license"
+        description="Manage your wai license"
       />
 
       {/* Stat row */}

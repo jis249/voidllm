@@ -157,6 +157,64 @@ func TestGetOrgUsage_GroupByModel(t *testing.T) {
 	}
 }
 
+func TestGetOrgUsage_GroupByUserIncludesDisplayName(t *testing.T) {
+	t.Parallel()
+
+	app, database, keyCache := setupTestApp(t, "file:TestGetOrgUsage_GroupByUserIncludesDisplayName?mode=memory&cache=private")
+	org := mustCreateOrg(t, database, "Usage User Org", "usage-org-user-label")
+	user := mustCreateUser(t, database, "usage-user@example.com", "Usage User")
+	mustCreateMembership(t, database, org.ID, user.ID, "member")
+	testKey := addTestKey(t, keyCache, auth.RoleOrgAdmin, org.ID)
+
+	now := time.Now().UTC()
+	from := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	to := now.Add(time.Minute).Format(time.RFC3339)
+
+	query := fmt.Sprintf(
+		`INSERT INTO usage_events
+			(id, key_id, key_type, org_id, user_id, model_name,
+			 prompt_tokens, completion_tokens, total_tokens, status_code, created_at)
+		 VALUES
+			('uu-1', 'key-1', 'user_key', '%s', '%s', 'gpt-4',
+			 100, 50, 150, 200, '%s')`,
+		org.ID,
+		user.ID,
+		now.Add(-30*time.Minute).UTC().Format(time.RFC3339),
+	)
+	if _, err := database.SQL().ExecContext(context.Background(), query); err != nil {
+		t.Fatalf("insert usage event: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", usageURL(org.ID, from, to, "user"), nil)
+	req.Header.Set("Authorization", "Bearer "+testKey)
+
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: testTimeout})
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, body)
+	}
+
+	var got map[string]any
+	decodeBody(t, resp.Body, &got)
+
+	data, ok := got["data"].([]any)
+	if !ok || len(data) != 1 {
+		t.Fatalf("data = %#v, want one row", got["data"])
+	}
+	row := data[0].(map[string]any)
+	if row["group_key"] != user.ID {
+		t.Errorf("group_key = %q, want user id %q", row["group_key"], user.ID)
+	}
+	if row["group_label"] != "Usage User" {
+		t.Errorf("group_label = %q, want display name", row["group_label"])
+	}
+}
+
 func TestGetOrgUsage_MissingFrom_Returns400(t *testing.T) {
 	t.Parallel()
 

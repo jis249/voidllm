@@ -346,7 +346,7 @@ export default function DashboardPage() {
   )
 
   const scope = stats?.scope ?? 'user'
-  const description = scopeDescriptions[scope] ?? 'Your VoidLLM usage overview'
+  const description = scopeDescriptions[scope] ?? 'Your wai usage overview'
   const isOrgScope = scope === 'org'
 
   // Build area chart data from usage series
@@ -407,7 +407,7 @@ export default function DashboardPage() {
           <div onClick={() => setShowUpdateDialog(true)} className="cursor-pointer">
             <Banner
               variant="info"
-              title={`VoidLLM ${updateInfo.available_version} is available (current: ${updateInfo.current_version})`}
+              title={`wai ${updateInfo.available_version} is available (current: ${updateInfo.current_version})`}
               onDismiss={(e) => {
                 e.stopPropagation()
                 dismissUpdate()
@@ -607,7 +607,7 @@ export default function DashboardPage() {
         <Dialog
           open={showUpdateDialog}
           onClose={() => setShowUpdateDialog(false)}
-          title={`VoidLLM ${updateInfo.available_version ?? ''}`}
+          title={`wai ${updateInfo.available_version ?? ''}`}
           footer={
             <div className="flex gap-3">
               {updateInfo.release_url != null && (

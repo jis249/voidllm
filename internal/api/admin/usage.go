@@ -22,6 +22,7 @@ type usageResponse struct {
 // usageDataPoint holds aggregated metrics for one group within a usage response.
 type usageDataPoint struct {
 	GroupKey         string  `json:"group_key,omitempty"`
+	GroupLabel       string  `json:"group_label,omitempty"`
 	TotalRequests    int64   `json:"total_requests"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`
@@ -140,11 +141,12 @@ func parseSystemUsageParams(c fiber.Ctx) (from, to time.Time, groupBy string, ok
 
 // aggregatesToDataPoints converts a slice of UsageAggregate to the JSON-serialisable
 // slice used in all usage responses.
-func aggregatesToDataPoints(aggs []db.UsageAggregate) []usageDataPoint {
+func aggregatesToDataPoints(aggs []db.UsageAggregate, labels map[string]string) []usageDataPoint {
 	data := make([]usageDataPoint, len(aggs))
 	for i, a := range aggs {
 		data[i] = usageDataPoint{
 			GroupKey:         a.GroupKey,
+			GroupLabel:       labels[a.GroupKey],
 			TotalRequests:    a.TotalRequests,
 			PromptTokens:     a.PromptTokens,
 			CompletionTokens: a.CompletionTokens,
@@ -154,6 +156,27 @@ func aggregatesToDataPoints(aggs []db.UsageAggregate) []usageDataPoint {
 		}
 	}
 	return data
+}
+
+func userGroupLabels(ctx fiber.Ctx, h *Handler, groupBy string, aggs []db.UsageAggregate) (map[string]string, error) {
+	if groupBy != "user" {
+		return nil, nil
+	}
+
+	seen := make(map[string]bool, len(aggs))
+	ids := make([]string, 0, len(aggs))
+	for _, agg := range aggs {
+		if agg.GroupKey == "" || seen[agg.GroupKey] {
+			continue
+		}
+		seen[agg.GroupKey] = true
+		ids = append(ids, agg.GroupKey)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	return h.DB.GetUserDisplayNames(ctx.Context(), ids)
 }
 
 // GetOrgUsage handles GET /api/v1/orgs/:org_id/usage.
@@ -198,13 +221,21 @@ func (h *Handler) GetOrgUsage(c fiber.Ctx) error {
 		)
 		return apierror.InternalError(c, "failed to retrieve usage data")
 	}
+	labels, err := userGroupLabels(c, h, groupBy, aggregates)
+	if err != nil {
+		h.Log.ErrorContext(c.Context(), "get org usage: user labels",
+			slog.String("org_id", orgID),
+			slog.String("error", err.Error()),
+		)
+		return apierror.InternalError(c, "failed to retrieve usage data")
+	}
 
 	return c.JSON(usageResponse{
 		OrgID:   orgID,
 		From:    from.UTC().Format(time.RFC3339),
 		To:      to.UTC().Format(time.RFC3339),
 		GroupBy: groupBy,
-		Data:    aggregatesToDataPoints(aggregates),
+		Data:    aggregatesToDataPoints(aggregates, labels),
 	})
 }
 
@@ -249,12 +280,19 @@ func (h *Handler) SystemAdminUsage(c fiber.Ctx) error {
 		)
 		return apierror.InternalError(c, "failed to retrieve usage data")
 	}
+	labels, err := userGroupLabels(c, h, groupBy, aggregates)
+	if err != nil {
+		h.Log.ErrorContext(c.Context(), "system admin usage: user labels",
+			slog.String("error", err.Error()),
+		)
+		return apierror.InternalError(c, "failed to retrieve usage data")
+	}
 
 	return c.JSON(usageResponse{
 		From:    from.UTC().Format(time.RFC3339),
 		To:      to.UTC().Format(time.RFC3339),
 		GroupBy: groupBy,
-		Data:    aggregatesToDataPoints(aggregates),
+		Data:    aggregatesToDataPoints(aggregates, labels),
 	})
 }
 
@@ -308,12 +346,20 @@ func (h *Handler) MyUsage(c fiber.Ctx) error {
 		)
 		return apierror.InternalError(c, "failed to retrieve usage data")
 	}
+	labels, err := userGroupLabels(c, h, groupBy, aggregates)
+	if err != nil {
+		h.Log.ErrorContext(c.Context(), "my usage: user labels",
+			slog.String("user_id", keyInfo.UserID),
+			slog.String("error", err.Error()),
+		)
+		return apierror.InternalError(c, "failed to retrieve usage data")
+	}
 
 	return c.JSON(usageResponse{
 		OrgID:   keyInfo.OrgID,
 		From:    from.UTC().Format(time.RFC3339),
 		To:      to.UTC().Format(time.RFC3339),
 		GroupBy: groupBy,
-		Data:    aggregatesToDataPoints(aggregates),
+		Data:    aggregatesToDataPoints(aggregates, labels),
 	})
 }

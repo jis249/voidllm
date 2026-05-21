@@ -82,7 +82,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-bg-primary px-4">
       <div className="w-full max-w-sm bg-bg-secondary border border-white/5 rounded-xl p-8">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold gradient-text">VoidLLM</h1>
+          <h1 className="text-3xl font-bold gradient-text">wai</h1>
           <p className="mt-2 text-sm text-text-tertiary">Sign in to your workspace</p>
         </div>
 

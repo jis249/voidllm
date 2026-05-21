@@ -51,13 +51,19 @@ const GROUP_BY_HEADERS: Record<string, string> = {
   org: 'Org',
 }
 
+function groupDisplayValue(row: UsageDataPoint): string {
+  return row.group_label || row.group_key
+}
+
 function buildColumns(groupBy: string): Column<UsageDataPoint>[] {
   return [
     {
       key: 'group_key',
       header: GROUP_BY_HEADERS[groupBy] ?? 'Group',
       render: (row) => (
-        <span className="font-mono text-text-primary">{row.group_key}</span>
+        <span className={row.group_label ? 'text-text-primary' : 'font-mono text-text-primary'}>
+          {groupDisplayValue(row)}
+        </span>
       ),
     },
     {
@@ -338,7 +344,7 @@ export default function LLMUsagePage() {
               exportData(
                 sortedData as unknown as Record<string, unknown>[],
                 USAGE_EXPORT_HEADERS,
-                `voidllm-usage-${groupBy}`,
+                `wai-usage-${groupBy}`,
                 'csv',
               )
             }
@@ -356,7 +362,7 @@ export default function LLMUsagePage() {
               exportData(
                 sortedData as unknown as Record<string, unknown>[],
                 USAGE_EXPORT_HEADERS,
-                `voidllm-usage-${groupBy}`,
+                `wai-usage-${groupBy}`,
                 'json',
               )
             }
@@ -385,7 +391,7 @@ export default function LLMUsagePage() {
           <h3 className="text-sm font-semibold text-text-primary mb-4">Top by Tokens</h3>
           <HorizontalBar
             items={top5.map((d) => ({
-              label: d.group_key,
+              label: groupDisplayValue(d),
               value: d.total_tokens,
               detail: formatTokens(d.total_tokens),
             }))}

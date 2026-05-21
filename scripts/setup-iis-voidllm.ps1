@@ -1,6 +1,6 @@
 param(
     [int]$Port = 8081,
-    [string]$SiteName = "VoidLLM",
+    [string]$SiteName = "wai",
     [string]$BackendUrl = "http://localhost:8080"
 )
 
@@ -45,7 +45,7 @@ foreach ($packageId in $packages) {
 
 Import-Module WebAdministration
 
-$siteRoot = Join-Path $env:SystemDrive "inetpub\voidllm"
+$siteRoot = Join-Path $env:SystemDrive "inetpub\wai"
 New-Item -ItemType Directory -Path $siteRoot -Force | Out-Null
 
 $rewriteUrl = $BackendUrl.TrimEnd("/") + "/{R:1}"
@@ -56,7 +56,7 @@ $webConfigPath = Join-Path $siteRoot "web.config"
   <system.webServer>
     <rewrite>
       <rules>
-        <rule name="ReverseProxyToVoidLLM" stopProcessing="true">
+        <rule name="ReverseProxyTowai" stopProcessing="true">
           <match url="(.*)" />
           <action type="Rewrite" url="$rewriteUrl" />
         </rule>
