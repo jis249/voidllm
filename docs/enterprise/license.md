@@ -16,7 +16,7 @@ Purchase a Pro or Enterprise subscription at [voidllm.ai](https://voidllm.ai/#pr
 
 Three ways to provide the license:
 
-**Environment variable (recommended for Docker/K8s):**
+**Environment variable:**
 
 ```bash
 export VOIDLLM_LICENSE="eyJhbGciOiJFZERTQSIs..."

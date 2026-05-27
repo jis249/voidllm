@@ -24,9 +24,9 @@ export VOIDLLM_ENCRYPTION_KEY=$(openssl rand -base64 32)
 ```
 
 ### Can't find bootstrap credentials
-VoidLLM prints credentials to stdout on first start only. Check container logs:
+VoidLLM prints credentials to stdout on first start only. Check the service logs:
 ```bash
-docker logs voidllm | grep "BOOTSTRAP"
+journalctl -u voidllm | grep "BOOTSTRAP"
 kubectl logs deploy/voidllm | grep "BOOTSTRAP"
 ```
 

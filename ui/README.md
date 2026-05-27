@@ -67,7 +67,7 @@ The production build (`npm run build`) outputs to `ui/dist/`. The Go binary embe
 var Assets embed.FS
 ```
 
-The Dockerfile handles this automatically — Stage 1 builds the UI, Stage 2 copies `dist/` into the Go build context.
+For release builds, run `npm run build` before compiling the Go binary so `ui/dist/` is present for `embed.FS`.
 
 ## Color Palette
 

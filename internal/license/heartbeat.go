@@ -76,7 +76,7 @@ type verifyResponse struct {
 // StartHeartbeat launches a background goroutine that periodically verifies
 // the license key against the license server. If the current license is within
 // refreshThreshold of expiry and the server returns a fresh JWT, the holder is
-// updated in memory. No file persistence — in Docker, the filesystem is ephemeral.
+// updated in memory. Persistence is handled by storing refreshed licenses in the database.
 //
 // The returned function stops the goroutine, cancels any in-flight HTTP request,
 // and blocks until the goroutine exits.

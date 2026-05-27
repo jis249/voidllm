@@ -1,20 +1,10 @@
 ---
 title: "Security Hardening"
-description: "Container security, TLS, network policies, and checklist"
+description: "TLS, network policies, and security checklist"
 section: security
 order: 3
 ---
 # Security Hardening
-
-## Container Security
-
-The Helm chart and Docker image include production security defaults:
-
-- Non-root container user (`voidllm:voidllm`, UID 1000)
-- Read-only root filesystem
-- All Linux capabilities dropped
-- No privilege escalation
-- Resource limits configured
 
 ## Network
 
@@ -63,7 +53,6 @@ The `VOIDLLM_ENCRYPTION_KEY` is critical:
 - [ ] Don't use `VOIDLLM_ADMIN_KEY` as a production API key (it's for bootstrap only)
 - [ ] Separate admin port from proxy port in production
 - [ ] Enable TLS on admin port or terminate TLS at the reverse proxy
-- [ ] Set resource limits in Kubernetes
 - [ ] Use network policies to restrict access
 - [ ] Rotate API keys regularly
 - [ ] Monitor `/metrics` for unusual patterns

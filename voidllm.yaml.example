@@ -45,8 +45,8 @@ database:
   driver: sqlite
 
   # SQLite: path to the database file
-  # Use a persistent volume in Docker/Kubernetes
-  dsn: /data/voidllm.db
+  # Use a persistent directory for production deployments.
+  dsn: ./voidllm.db
 
   # PostgreSQL example:
   # driver: postgres

@@ -1,22 +1,12 @@
 ---
 title: "Getting Started"
-description: "From docker run to your first proxied LLM request in 3 minutes"
+description: "From binary start to your first proxied LLM request in 3 minutes"
 section: root
 order: 1
 ---
 # Getting Started
 
-VoidLLM runs as a single binary with the admin UI embedded. No separate frontend server, no Node.js, no extra containers.
-
-## Quick Start (Docker)
-
-```bash
-docker run -p 8080:8080 \
-  -v voidllm_data:/data \
-  -e VOIDLLM_ENCRYPTION_KEY=$(openssl rand -base64 32) \
-  -e VOIDLLM_ADMIN_KEY=my-admin-key-at-least-32-chars!! \
-  ghcr.io/voidmind-io/voidllm:latest
-```
+VoidLLM runs as a single binary with the admin UI embedded. No separate frontend server or extra runtime is required.
 
 ## Quick Start (Binary)
 
@@ -118,7 +108,8 @@ Open `http://localhost:8080` and explore:
 ## Next Steps
 
 - [Configuration Reference](configuration.md) - all YAML settings
-- [Deployment Guide](deployment/docker.md) - Docker, Kubernetes, PostgreSQL
+- [Binary Deployment](deployment/binary.md) - standalone setup and service examples
+- [Database Guide](deployment/database.md) - SQLite, PostgreSQL, and migration
 - [Load Balancing](models/load-balancing.md) - multi-deployment failover
 - [MCP Gateway](mcp/overview.md) - proxy external MCP servers
 - [RBAC](security/rbac.md) - org/team/user/key access control

@@ -57,7 +57,7 @@ For config-less startup (no YAML file), these environment variables override the
 
 | Variable | Default | Description |
 |---|---|---|
-| `VOIDLLM_DATABASE_DSN` | `./voidllm.db` (standalone), `/data/voidllm.db` (Docker) | Database file path or PostgreSQL DSN |
+| `VOIDLLM_DATABASE_DSN` | `./voidllm.db` | Database file path or PostgreSQL DSN |
 | `VOIDLLM_DATABASE_DRIVER` | `sqlite` | Database driver - `sqlite` or `postgres` |
 
 ## Models

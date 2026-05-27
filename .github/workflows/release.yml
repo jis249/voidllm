@@ -6,56 +6,8 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v3
-
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
-
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ghcr.io/voidmind-io/voidllm:${{ steps.version.outputs.version }}
-            ghcr.io/voidmind-io/voidllm:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
-
-      - name: Sign container image
-        run: |
-          cosign sign --yes \
-            ghcr.io/voidmind-io/voidllm@${{ steps.build.outputs.digest }}
-
   binaries:
     runs-on: ubuntu-latest
     permissions:
@@ -114,16 +66,3 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || true
           gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip --clobber
 
-  provenance:
-    needs: docker
-    permissions:
-      actions: read
-      id-token: write
-      packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
-    with:
-      image: ghcr.io/voidmind-io/voidllm
-      digest: ${{ needs.docker.outputs.digest }}
-    secrets:
-      registry-username: ${{ github.actor }}
-      registry-password: ${{ secrets.GITHUB_TOKEN }}

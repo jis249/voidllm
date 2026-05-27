@@ -13,6 +13,8 @@ voidllm.yaml
 *.db
 *.db-shm
 *.db-wal
+data/
+*.log
 
 # Environment
 .env

@@ -8,7 +8,7 @@ order: 4
 
 ## SQLite (Default)
 
-Zero configuration. VoidLLM creates a SQLite database at `/data/voidllm.db` on first start. Suitable for single-instance deployments.
+Zero configuration. VoidLLM creates a SQLite database at `./voidllm.db` on first start. Suitable for single-instance deployments.
 
 No driver installation, no connection pooling, no external service. The database file is the only thing you need to back up.
 
@@ -60,5 +60,4 @@ pg_dump -U voidllm -h postgres voidllm > backup.sql
 | Multiple instances / replicas | PostgreSQL + Redis |
 | Need point-in-time recovery | PostgreSQL |
 | Development / testing | SQLite |
-| Docker single container | SQLite |
 | Kubernetes with multiple pods | PostgreSQL |

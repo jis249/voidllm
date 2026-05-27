@@ -1,12 +1,12 @@
 ---
 title: "Binary Deployment"
-description: "Run VoidLLM as a standalone binary on Linux, macOS, or Windows - no Docker required."
+description: "Run VoidLLM as a standalone binary on Linux, macOS, or Windows."
 section: deployment
 order: 0
 ---
 # Binary Deployment
 
-VoidLLM ships as a single binary (~15 MB) with the web UI embedded. No runtime dependencies, no containers required.
+VoidLLM ships as a single binary (~15 MB) with the web UI embedded. No extra runtime dependencies are required.
 
 ## Download
 
@@ -150,4 +150,4 @@ Download the new binary and replace the old one. The database is preserved - no 
 
 ## Connecting to Ollama
 
-If Ollama runs on the same machine, use `http://localhost:11434/v1` as the base URL. If VoidLLM runs in Docker but Ollama runs on the host, use `http://host.docker.internal:11434/v1` instead.
+If Ollama runs on the same machine, use `http://localhost:11434/v1` as the base URL.

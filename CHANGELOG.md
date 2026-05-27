@@ -35,7 +35,6 @@ All notable changes to VoidLLM are documented in this file.
 - golang.org/x/crypto 0.49.0 → 0.50.0 (#71)
 - modernc.org/sqlite 1.48.0 → 1.50.0 (#76)
 - react-router-dom 7.13.2 → 7.14.2 (#68)
-- docker/build-push-action 7.0.0 → 7.1.0 (#66)
 - actions/setup-node 6.3.0 → 6.4.0 (#74)
 
 ---
@@ -68,7 +67,7 @@ All notable changes to VoidLLM are documented in this file.
 
 ### Improvements
 - Batch dependency updates: grpc 1.80.0, OpenTelemetry 1.43.0, go-jose 4.1.4, vitest 4.1.2 (#63)
-- GitHub Actions workflow bumps: cosign-installer 4.1.1, docker/login-action 4.1.0, setup-node 6.3.0
+- GitHub Actions workflow bumps: cosign-installer 4.1.1, setup-node 6.3.0
 
 ### Fixes
 - ESLint setState-in-useEffect violation in update notification component
@@ -107,7 +106,7 @@ All notable changes to VoidLLM are documented in this file.
 - Rate limit and token budget violations now logged
 - Migration execution logged at INFO
 - Failed login attempts audited
-- Default DB path: ./voidllm.db for standalone, /data/voidllm.db for Docker
+- Default DB path: ./voidllm.db for standalone runs
 - SSRF-safe dialer for MCP health probes
 - Heartbeat dedup via timestamp (replaces lock mechanism)
 - Bounded concurrency for MCP health probes
@@ -167,9 +166,8 @@ All notable changes to VoidLLM are documented in this file.
 
 ## [0.0.9] - 2026-03-30
 
-### Docker, Helm & Configuration
+### Helm & Configuration
 
-- **Fixed image registry** — Docker Compose now uses `ghcr.io/voidmind-io/voidllm`
 - **Helm chart updated** — correct registry, MCP, Code Mode, and health check settings in values + configmap
 - **Istio support** — optional Gateway + VirtualService templates (`istio.enabled: true`)
 - **MCP servers in Helm** — static MCP server definitions via `config.mcpServers`
@@ -251,8 +249,6 @@ All notable changes to VoidLLM are documented in this file.
 - **Create Model dialog** — mode switch (Single Endpoint / Load Balanced)
 - **Expandable deployment rows** — Models page shows per-deployment health, provider, base URL
 - **Table component** — generic `renderExpandedRow` support
-- **ARM64 Docker images** — multi-arch builds (linux/amd64 + linux/arm64)
-- **Cross-compile Dockerfile** — builds in ~2.5 min instead of ~20 min
 - **Flexible encryption key** — accepts base64 or any string >= 16 characters (SHA-256 derived)
 - **Default config fallback** — start with just `VOIDLLM_ENCRYPTION_KEY` env var, no config file needed
 - **Bootstrap log ordering** — credentials shown after server start, cleared from memory after print
@@ -291,7 +287,7 @@ All notable changes to VoidLLM are documented in this file.
 - **Dashboard** — stat cards with icons, usage charts, model performance, budget warnings
 - **Playground** — split panel layout, advanced parameters, code blocks
 - **Keys page** — stat cards, icon actions, key counts
-- **GitHub Actions** — CI (Go + UI), Release (Docker to GHCR), CodeQL, OpenSSF Scorecard
+- **GitHub Actions** — CI (Go + UI), release assets, CodeQL, OpenSSF Scorecard
 
 ---
 
@@ -352,5 +348,4 @@ First tagged release. Includes all features developed during the pre-release pha
 - Redis (optional) for distributed rate limiting
 - Bidirectional database migration tool
 - Helm chart with PG/Redis subcharts
-- 3-stage Dockerfile (Node → Go → Alpine)
 - Key rotation with 24h grace period

@@ -22,7 +22,7 @@ What you expected to happen.
 ## Environment
 
 - VoidLLM version: (e.g., 0.1.0 or commit hash)
-- OS: (e.g., Linux, macOS, Docker)
+- OS: (e.g., Linux, macOS, Windows)
 - Database: (SQLite / PostgreSQL)
 - Upstream provider: (e.g., vLLM, Ollama, OpenAI, Anthropic)
 

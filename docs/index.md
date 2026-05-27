@@ -10,13 +10,12 @@ Privacy-first LLM proxy and AI gateway. Self-hosted, single binary, sub-500us ov
 
 ## Getting Started
 
-- [Quick Start](getting-started.md) - from `docker run` to first proxied request
+- [Quick Start](getting-started.md) - from binary start to first proxied request
 - [Configuration Reference](configuration.md) - all YAML settings with examples
 
 ## Deployment
 
 - [Binary](deployment/binary.md) - standalone binary, Linux/macOS/Windows
-- [Docker](deployment/docker.md) - Docker and Docker Compose
 - [Kubernetes](deployment/kubernetes.md) - Helm chart, Istio, health probes
 - [Reverse Proxy](deployment/reverse-proxy.md) - Nginx, Caddy, Traefik
 - [Database](deployment/database.md) - SQLite, PostgreSQL, migration

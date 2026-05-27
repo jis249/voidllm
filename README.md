@@ -42,21 +42,6 @@ VoidLLM is a self-hosted LLM proxy that sits between your applications and LLM p
 
 ## Quick Start
 
-```bash
-# Generate required keys
-export VOIDLLM_ADMIN_KEY=$(openssl rand -base64 32)
-export VOIDLLM_ENCRYPTION_KEY=$(openssl rand -base64 32)
-
-# Start the LLM proxy with Docker
-docker run -p 8080:8080 \
-  -e VOIDLLM_ADMIN_KEY -e VOIDLLM_ENCRYPTION_KEY \
-  -v $(pwd)/voidllm.yaml:/etc/voidllm/voidllm.yaml:ro \
-  -v voidllm_data:/data \
-  ghcr.io/voidmind-io/voidllm:latest
-```
-
-### Binary (no Docker needed)
-
 Download the latest binary for your platform from the [releases page](https://github.com/voidmind-io/voidllm/releases/latest):
 
 ```bash
@@ -117,7 +102,7 @@ Any OpenAI-compatible SDK works out of the box - just change the base URL to you
 | Code Mode | WASM-sandboxed JS for multi-tool orchestration |
 | Prometheus metrics | Latency, tokens, active streams, routing, health |
 | Database | SQLite (default) or PostgreSQL |
-| Deployment | Docker, Helm chart, graceful shutdown |
+| Deployment | Standalone binary, Helm chart, graceful shutdown |
 | | |
 | **Pro ($49/mo)** | **Everything above, plus:** |
 | Cost reports | Model breakdown, daily trends |
@@ -217,7 +202,6 @@ This connects your IDE (Claude Code, Cursor, Windsurf) to the Code Mode endpoint
 |---|---|
 | Getting Started | [Quick Start](docs/getting-started.md) |
 | Configuration | [All YAML settings](docs/configuration.md) |
-| Docker | [Docker deployment](docs/deployment/docker.md) |
 | Kubernetes | [Helm chart](docs/deployment/kubernetes.md) |
 | Providers | [OpenAI, Anthropic, Azure, Ollama, vLLM](docs/models/providers.md) |
 | Load Balancing | [Strategies, failover, circuit breakers](docs/models/load-balancing.md) |
@@ -283,13 +267,13 @@ Environment variables are interpolated with `${VAR}` syntax. Secrets never hardc
 
 ## Deployment
 
-### Docker Compose
+### Local Binary
 
 ```bash
 cp voidllm.yaml.example voidllm.yaml
 export VOIDLLM_ADMIN_KEY=$(openssl rand -base64 32)
 export VOIDLLM_ENCRYPTION_KEY=$(openssl rand -base64 32)
-docker-compose up
+voidllm --config voidllm.yaml
 ```
 
 ### Kubernetes (Helm)

@@ -8,7 +8,7 @@ Thank you for your interest in contributing to VoidLLM! This guide will help you
 
 - Go 1.23+
 - Node.js 20+ (for UI development)
-- Docker (optional, for Postgres/Redis)
+- PostgreSQL or Redis only if your change touches those integrations
 
 ### Setup
 
