@@ -6,6 +6,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$UiDir = Join-Path $Root "ui"
+$UiDist = Join-Path $UiDir "dist"
+
+function Test-WingetPackageInstalled {
+    param([string]$PackageId)
+
+    winget list --id $PackageId -e --accept-source-agreements | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "This script must be run as Administrator."
@@ -37,8 +48,13 @@ $packages = @(
 )
 
 foreach ($packageId in $packages) {
+    if (Test-WingetPackageInstalled $packageId) {
+        Write-Host "$packageId is already installed."
+        continue
+    }
+
     winget install --id $packageId -e --accept-source-agreements --accept-package-agreements --silent
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0 -and -not (Test-WingetPackageInstalled $packageId)) {
         throw "winget install failed for $packageId with exit code $LASTEXITCODE"
     }
 }
@@ -48,7 +64,25 @@ Import-Module WebAdministration
 $siteRoot = Join-Path $env:SystemDrive "inetpub\wai"
 New-Item -ItemType Directory -Path $siteRoot -Force | Out-Null
 
-$rewriteUrl = $BackendUrl.TrimEnd("/") + "/{R:1}"
+if (-not (Test-Path (Join-Path $UiDist "index.html"))) {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        throw "WAI UI build was not found at $UiDist and npm is not on PATH."
+    }
+
+    Push-Location $UiDir
+    try {
+        if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
+            npm ci
+        }
+        npm run build
+    } finally {
+        Pop-Location
+    }
+}
+
+Copy-Item -Path (Join-Path $UiDist "*") -Destination $siteRoot -Recurse -Force
+
+$rewriteApiUrl = $BackendUrl.TrimEnd("/") + "/{R:0}"
 $webConfigPath = Join-Path $siteRoot "web.config"
 @"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -56,9 +90,17 @@ $webConfigPath = Join-Path $siteRoot "web.config"
   <system.webServer>
     <rewrite>
       <rules>
-        <rule name="ReverseProxyTowai" stopProcessing="true">
-          <match url="(.*)" />
-          <action type="Rewrite" url="$rewriteUrl" />
+        <rule name="ProxyWaiApi" stopProcessing="true">
+          <match url="^(api|v1)(/.*)?$" />
+          <action type="Rewrite" url="$rewriteApiUrl" />
+        </rule>
+        <rule name="WaiSpaFallback" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="/index.html" />
         </rule>
       </rules>
     </rewrite>
@@ -99,4 +141,6 @@ if ($LASTEXITCODE -ne 0) {
 Start-Service W3SVC
 Start-Website -Name $SiteName
 
-Write-Host "IIS site '$SiteName' is configured on http://localhost:$Port and proxies to $BackendUrl"
+Write-Host "IIS site '$SiteName' is configured on http://localhost:$Port"
+Write-Host "Serving WAI UI from $UiDist"
+Write-Host "Proxying WAI API requests to $BackendUrl"

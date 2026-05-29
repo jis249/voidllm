@@ -128,7 +128,7 @@ if ($BackendOnly) {
     Write-Host "Starting wai backend locally..."
     Write-Host "Embedded UI/API: http://localhost:8080"
     Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
-    Write-Host "Models: default/local -> qwen3-coder:30b, local-embedding -> bge-m3:latest"
+    Write-Host "Models: default/local -> qwen3-coder:30b, gemma4/local-gemma -> gemma4:31b, local-embedding -> bge-m3:latest"
     & $Exe --config $Config
     exit $LASTEXITCODE
 }
@@ -174,7 +174,7 @@ Write-Host "Starting wai source UI locally..."
 Write-Host "WAI UI: http://127.0.0.1:5173"
 Write-Host "Backend API: http://localhost:8080"
 Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
-Write-Host "Models: default/local -> qwen3-coder:30b, local-embedding -> bge-m3:latest"
+Write-Host "Models: default/local -> qwen3-coder:30b, gemma4/local-gemma -> gemma4:31b, local-embedding -> bge-m3:latest"
 Push-Location $UiDir
 try {
     npm run dev -- --host 127.0.0.1
