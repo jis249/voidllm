@@ -3,7 +3,8 @@ param(
     [string]$PostgresUser = "postgres",
     [string]$PostgresPassword = "",
     [string]$DatabaseName = "wai",
-    [switch]$BackendOnly
+    [switch]$BackendOnly,
+    [switch]$BackendDetached
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,6 +97,57 @@ function Use-BackendBinary {
     return $ReleaseExe
 }
 
+function Start-BackendDetached {
+    param(
+        [int]$Port = 8080,
+        [string]$LogName = "wai-backend.log",
+        [string]$ErrorLogName = "wai-backend.err.log"
+    )
+
+    $backend = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if ($backend) {
+        Write-Host "wai backend already running on http://localhost:$Port"
+        return
+    }
+
+    $backendLog = Join-Path $DataDir $LogName
+    $backendErr = Join-Path $DataDir $ErrorLogName
+    $backendProcess = Start-Process -FilePath $Exe `
+        -ArgumentList @("--config", $Config) `
+        -WorkingDirectory $Root `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $backendLog `
+        -RedirectStandardError $backendErr `
+        -PassThru
+
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Seconds 1
+        $backend = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if ($backend) {
+            break
+        }
+
+        if ($backendProcess.HasExited) {
+            $message = "wai backend exited before it started listening on port $Port."
+            if (Test-Path $backendErr) {
+                $errorText = Get-Content -Path $backendErr -Raw
+                if (-not [string]::IsNullOrWhiteSpace($errorText)) {
+                    $message = "$message`n$errorText"
+                }
+            }
+            throw $message
+        }
+    }
+
+    if (-not $backend) {
+        throw "wai backend did not start on port $Port. Check $backendLog and $backendErr."
+    }
+
+    Write-Host "wai backend started on http://localhost:$Port"
+    Write-Host "Backend process id: $($backendProcess.Id)"
+    Write-Host "Backend logs: $backendLog"
+}
+
 New-Item -ItemType Directory -Force -Path $BinDir, $DataDir | Out-Null
 
 $envValues = Read-LocalEnv
@@ -148,6 +200,15 @@ if ($exists -ne "1") {
 
 $Exe = Use-BackendBinary
 
+if ($BackendDetached) {
+    Write-Host "Starting wai backend in the background..."
+    Write-Host "Embedded UI/API: http://localhost:8080"
+    Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
+    Write-Host "Models: default/local -> qwen3-coder:30b, gemma4/local-gemma -> gemma4:31b, local-embedding -> bge-m3:latest"
+    Start-BackendDetached -Port 8080
+    exit 0
+}
+
 if ($BackendOnly) {
     Write-Host "Starting wai backend locally..."
     Write-Host "Embedded UI/API: http://localhost:8080"
@@ -157,33 +218,7 @@ if ($BackendOnly) {
     exit $LASTEXITCODE
 }
 
-$backend = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
-if (-not $backend) {
-    $backendLog = Join-Path $DataDir "wai-backend.log"
-    $backendErr = Join-Path $DataDir "wai-backend.err.log"
-    Start-Process -FilePath $Exe `
-        -ArgumentList @("--config", $Config) `
-        -WorkingDirectory $Root `
-        -RedirectStandardOutput $backendLog `
-        -RedirectStandardError $backendErr
-
-    for ($i = 0; $i -lt 20; $i++) {
-        Start-Sleep -Milliseconds 500
-        $backend = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
-        if ($backend) {
-            break
-        }
-    }
-
-    if (-not $backend) {
-        throw "wai backend did not start on port 8080. Check $backendLog and $backendErr."
-    }
-
-    Write-Host "wai backend started on http://localhost:8080"
-    Write-Host "Backend logs: $backendLog"
-} else {
-    Write-Host "wai backend already running on http://localhost:8080"
-}
+Start-BackendDetached -Port 8080
 
 if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
     Push-Location $UiDir

@@ -20,14 +20,32 @@ export interface UsageResponse {
   data: UsageDataPoint[]
 }
 
-export function useUsage(orgId: string, from: string, to: string, groupBy: string) {
+export function useUsage(
+  orgId: string,
+  from: string,
+  to: string,
+  groupBy: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['usage', orgId, from, to, groupBy],
     queryFn: () =>
       apiClient<UsageResponse>(
-        `/orgs/${orgId}/usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${groupBy}`,
+        `/orgs/${orgId}/usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
       ),
-    enabled: !!orgId && !!from && !!to,
+    enabled: enabled && !!orgId && !!from && !!to,
+    staleTime: 60_000,
+  })
+}
+
+export function useMyUsage(from: string, to: string, groupBy: string, enabled = true) {
+  return useQuery({
+    queryKey: ['usage', 'me', from, to, groupBy],
+    queryFn: () =>
+      apiClient<UsageResponse>(
+        `/usage/me?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
+      ),
+    enabled: enabled && !!from && !!to,
     staleTime: 60_000,
   })
 }

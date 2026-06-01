@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '../../components/ui/StatCard'
 import { AreaChart } from '../../components/ui/charts'
 import { useMe } from '../../hooks/useMe'
-import { useUsage } from '../../hooks/useUsage'
-import { useMCPUsage } from '../../hooks/useMCPUsage'
+import { useUsage, useMyUsage } from '../../hooks/useUsage'
+import { useMCPUsage, useMyMCPUsage } from '../../hooks/useMCPUsage'
 import { formatNumber, formatTokens, formatCost } from '../../lib/utils'
 
 function getLast7Days(): { from: string; to: string } {
@@ -90,17 +90,26 @@ function ArrowRightIcon() {
 export default function UsageOverviewPage() {
   const { data: me } = useMe()
   const orgId = me?.org_id ?? ''
+  const canViewOrgUsage = me?.is_system_admin === true || me?.role === 'org_admin'
 
   const { from: from24h, to: to24h } = useMemo(() => getLast24h(), [])
   const { from: from7d, to: to7d } = useMemo(() => getLast7Days(), [])
 
   // LLM: 24h totals + 7d daily trend
-  const llmTotals = useUsage(orgId, from24h, to24h, 'model')
-  const llmTrend = useUsage(orgId, from7d, to7d, 'day')
+  const orgLlmTotals = useUsage(orgId, from24h, to24h, 'model', !!me && canViewOrgUsage)
+  const myLlmTotals = useMyUsage(from24h, to24h, 'model', !!me && !canViewOrgUsage)
+  const orgLlmTrend = useUsage(orgId, from7d, to7d, 'day', !!me && canViewOrgUsage)
+  const myLlmTrend = useMyUsage(from7d, to7d, 'day', !!me && !canViewOrgUsage)
+  const llmTotals = canViewOrgUsage ? orgLlmTotals : myLlmTotals
+  const llmTrend = canViewOrgUsage ? orgLlmTrend : myLlmTrend
 
   // MCP: 24h totals + 7d daily trend
-  const mcpTotals = useMCPUsage(orgId, from24h, to24h, 'server')
-  const mcpTrend = useMCPUsage(orgId, from7d, to7d, 'day')
+  const orgMcpTotals = useMCPUsage(orgId, from24h, to24h, 'server', !!me && canViewOrgUsage)
+  const myMcpTotals = useMyMCPUsage(from24h, to24h, 'server', !!me && !canViewOrgUsage)
+  const orgMcpTrend = useMCPUsage(orgId, from7d, to7d, 'day', !!me && canViewOrgUsage)
+  const myMcpTrend = useMyMCPUsage(from7d, to7d, 'day', !!me && !canViewOrgUsage)
+  const mcpTotals = canViewOrgUsage ? orgMcpTotals : myMcpTotals
+  const mcpTrend = canViewOrgUsage ? orgMcpTrend : myMcpTrend
 
   const llmSummary = useMemo(() => {
     if (!llmTotals.data?.data) return { requests: 0, tokens: 0, cost: 0 }

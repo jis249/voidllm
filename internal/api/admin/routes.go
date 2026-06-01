@@ -41,6 +41,7 @@ func RegisterRoutes(app *fiber.App, handler *Handler, keyCache *cache.Cache[stri
 
 	// Own usage — no role restriction; any authenticated key sees its own data.
 	api.Get("/usage/me", handler.MyUsage)
+	api.Get("/mcp-usage/me", handler.MyMCPUsage)
 
 	// Dashboard stats — no role restriction.
 	api.Get("/dashboard/stats", handler.DashboardStats)

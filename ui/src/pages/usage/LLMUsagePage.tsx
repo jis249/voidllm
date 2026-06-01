@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
 import { AreaChart, DonutChart, HorizontalBar } from '../../components/ui/charts'
 import { useMe } from '../../hooks/useMe'
-import { useUsage, useCrossOrgUsage } from '../../hooks/useUsage'
+import { useUsage, useMyUsage, useCrossOrgUsage } from '../../hooks/useUsage'
 import type { UsageDataPoint } from '../../hooks/useUsage'
 import { formatNumber, formatTokens, formatCost } from '../../lib/utils'
 import { exportData } from '../../lib/export'
@@ -178,19 +178,27 @@ export default function LLMUsagePage() {
   const { data: me } = useMe()
   const orgId = me?.org_id ?? ''
   const isSystemAdmin = me?.is_system_admin === true
+  const canViewOrgUsage = isSystemAdmin || me?.role === 'org_admin'
 
   const { from, to } = useMemo(() => getTimeRange(range), [range])
 
-  const orgUsage = useUsage(orgId, from, to, groupBy)
+  const orgUsage = useUsage(orgId, from, to, groupBy, !!me && canViewOrgUsage)
+  const myUsage = useMyUsage(from, to, groupBy, !!me && !canViewOrgUsage)
   const crossOrgUsage = useCrossOrgData({ from, to, groupBy, enabled: isSystemAdmin })
 
-  const activeResult = crossOrg && isSystemAdmin ? crossOrgUsage : orgUsage
+  const activeResult = crossOrg && isSystemAdmin
+    ? crossOrgUsage
+    : canViewOrgUsage
+      ? orgUsage
+      : myUsage
 
   const { data: usage, isLoading } = activeResult
 
   // Daily trend data - only when groupBy is not already 'day'/'hour', and not cross-org
   const needsDailyTrend = !crossOrg && groupBy !== 'day' && groupBy !== 'hour'
-  const dailyUsage = useUsage(orgId, from, to, 'day')
+  const orgDailyUsage = useUsage(orgId, from, to, 'day', !!me && canViewOrgUsage && needsDailyTrend)
+  const myDailyUsage = useMyUsage(from, to, 'day', !!me && !canViewOrgUsage && needsDailyTrend)
+  const dailyUsage = canViewOrgUsage ? orgDailyUsage : myDailyUsage
   // Use main data directly when groupBy is already day or hour
   const trendData = needsDailyTrend ? dailyUsage.data?.data : usage?.data
 
@@ -227,7 +235,7 @@ export default function LLMUsagePage() {
 
   const columns = useMemo(() => buildColumns(groupBy), [groupBy])
 
-  const isDataLoading = isLoading && (crossOrg ? isSystemAdmin : !!orgId)
+  const isDataLoading = isLoading && !!me && (crossOrg ? isSystemAdmin : canViewOrgUsage ? !!orgId : true)
 
   const totalPrompt = usage?.data?.reduce((s, d) => s + d.prompt_tokens, 0) ?? 0
   const totalCompletion = usage?.data?.reduce((s, d) => s + d.completion_tokens, 0) ?? 0

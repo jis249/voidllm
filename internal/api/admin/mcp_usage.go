@@ -223,3 +223,45 @@ func (h *Handler) GetSystemMCPUsage(c fiber.Ctx) error {
 		Data:    mcpAggregatesToDataPoints(aggregates),
 	})
 }
+
+// MyMCPUsage handles GET /api/v1/mcp-usage/me.
+// Returns aggregated MCP tool call metrics scoped to the authenticated user's
+// own keys. No role restriction — any authenticated key may call this endpoint.
+func (h *Handler) MyMCPUsage(c fiber.Ctx) error {
+	keyInfo := auth.KeyInfoFromCtx(c)
+	if keyInfo == nil {
+		return apierror.Send(c, fiber.StatusUnauthorized, "unauthorized", "missing authentication")
+	}
+
+	from, to, groupBy, ok := parseMCPUsageParams(c)
+	if !ok {
+		return nil
+	}
+
+	filter := db.MCPUsageFilter{
+		OrgID: keyInfo.OrgID,
+	}
+	if keyInfo.UserID != "" {
+		filter.UserID = keyInfo.UserID
+	} else {
+		// SA keys have no user_id — scope by key_id to see only own usage.
+		filter.KeyID = keyInfo.ID
+	}
+
+	aggregates, err := h.DB.GetScopedMCPUsageAggregates(c.Context(), filter, from, to, groupBy)
+	if err != nil {
+		h.Log.ErrorContext(c.Context(), "my mcp usage: get aggregates",
+			slog.String("user_id", keyInfo.UserID),
+			slog.String("error", err.Error()),
+		)
+		return apierror.InternalError(c, "failed to retrieve MCP usage data")
+	}
+
+	return c.JSON(mcpUsageResponse{
+		OrgID:   keyInfo.OrgID,
+		From:    from.UTC().Format(time.RFC3339),
+		To:      to.UTC().Format(time.RFC3339),
+		GroupBy: groupBy,
+		Data:    mcpAggregatesToDataPoints(aggregates),
+	})
+}

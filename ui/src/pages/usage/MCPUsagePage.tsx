@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
 import { AreaChart, DonutChart, HorizontalBar } from '../../components/ui/charts'
 import { useMe } from '../../hooks/useMe'
-import { useMCPUsage, useCrossOrgMCPUsage } from '../../hooks/useMCPUsage'
+import { useMCPUsage, useMyMCPUsage, useCrossOrgMCPUsage } from '../../hooks/useMCPUsage'
 import type { MCPUsageDataPoint } from '../../hooks/useMCPUsage'
 import { formatNumber } from '../../lib/utils'
 import { exportData } from '../../lib/export'
@@ -190,19 +190,27 @@ export default function MCPUsagePage() {
   const { data: me } = useMe()
   const orgId = me?.org_id ?? ''
   const isSystemAdmin = me?.is_system_admin === true
+  const canViewOrgUsage = isSystemAdmin || me?.role === 'org_admin'
 
   const { from, to } = useMemo(() => getTimeRange(range), [range])
 
-  const orgUsage = useMCPUsage(orgId, from, to, groupBy)
+  const orgUsage = useMCPUsage(orgId, from, to, groupBy, !!me && canViewOrgUsage)
+  const myUsage = useMyMCPUsage(from, to, groupBy, !!me && !canViewOrgUsage)
   const crossOrgUsage = useCrossOrgMCPUsage({ from, to, groupBy }, crossOrg && isSystemAdmin)
 
-  const activeResult = crossOrg && isSystemAdmin ? crossOrgUsage : orgUsage
+  const activeResult = crossOrg && isSystemAdmin
+    ? crossOrgUsage
+    : canViewOrgUsage
+      ? orgUsage
+      : myUsage
 
   const { data: usage, isLoading } = activeResult
 
   // Daily trend data - only when groupBy is not already 'day'/'hour'
   const needsDailyTrend = groupBy !== 'day' && groupBy !== 'hour'
-  const dailyUsage = useMCPUsage(orgId, from, to, 'day')
+  const orgDailyUsage = useMCPUsage(orgId, from, to, 'day', !!me && canViewOrgUsage && needsDailyTrend)
+  const myDailyUsage = useMyMCPUsage(from, to, 'day', !!me && !canViewOrgUsage && needsDailyTrend)
+  const dailyUsage = canViewOrgUsage ? orgDailyUsage : myDailyUsage
   const trendData = needsDailyTrend ? dailyUsage.data?.data : usage?.data
 
   const handleCrossOrgToggle = (next: boolean) => {
@@ -243,17 +251,21 @@ export default function MCPUsagePage() {
 
   const columns = useMemo(() => buildColumns(groupBy), [groupBy])
 
-  const isDataLoading = isLoading && (crossOrg ? isSystemAdmin : !!orgId)
+  const isDataLoading = isLoading && !!me && (crossOrg ? isSystemAdmin : canViewOrgUsage ? !!orgId : true)
 
   // Get top 10 by tool groupBy - use a separate query when current groupBy isn't 'tool'
-  const toolGroupUsage = useMCPUsage(orgId, from, to, 'tool')
+  const orgToolGroupUsage = useMCPUsage(orgId, from, to, 'tool', !!me && canViewOrgUsage && groupBy !== 'tool')
+  const myToolGroupUsage = useMyMCPUsage(from, to, 'tool', !!me && !canViewOrgUsage && groupBy !== 'tool')
+  const toolGroupUsage = canViewOrgUsage ? orgToolGroupUsage : myToolGroupUsage
   const topTools = useMemo(() => {
     const source = groupBy === 'tool' ? sortedData : (toolGroupUsage.data?.data ?? [])
     return [...source].sort((a, b) => b.total_calls - a.total_calls).slice(0, 10)
   }, [groupBy, sortedData, toolGroupUsage.data])
 
   // For server groupBy - use a separate query when current groupBy isn't 'server'
-  const serverGroupUsage = useMCPUsage(orgId, from, to, 'server')
+  const orgServerGroupUsage = useMCPUsage(orgId, from, to, 'server', !!me && canViewOrgUsage && groupBy !== 'server')
+  const myServerGroupUsage = useMyMCPUsage(from, to, 'server', !!me && !canViewOrgUsage && groupBy !== 'server')
+  const serverGroupUsage = canViewOrgUsage ? orgServerGroupUsage : myServerGroupUsage
   const topServers = useMemo(() => {
     const source = groupBy === 'server' ? sortedData : (serverGroupUsage.data?.data ?? [])
     return [...source].sort((a, b) => b.total_calls - a.total_calls).slice(0, 10)

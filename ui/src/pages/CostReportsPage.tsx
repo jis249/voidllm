@@ -5,7 +5,7 @@ import { Table } from '../components/ui/Table'
 import type { Column } from '../components/ui/Table'
 import { Button } from '../components/ui/Button'
 import { useMe } from '../hooks/useMe'
-import { useUsage } from '../hooks/useUsage'
+import { useUsage, useMyUsage } from '../hooks/useUsage'
 import type { UsageDataPoint } from '../hooks/useUsage'
 import { formatNumber } from '../lib/utils'
 import { exportData } from '../lib/export'
@@ -261,11 +261,16 @@ export default function CostReportsPage() {
   const [range, setRange] = useState<TimeRange>('30d')
   const { data: me } = useMe()
   const orgId = me?.org_id ?? ''
+  const canViewOrgUsage = me?.is_system_admin === true || me?.role === 'org_admin'
 
   const { from, to } = useMemo(() => getTimeRange(range), [range])
 
-  const { data: modelUsage, isLoading: modelLoading } = useUsage(orgId, from, to, 'model')
-  const { data: dayUsage, isLoading: dayLoading } = useUsage(orgId, from, to, 'day')
+  const orgModelUsage = useUsage(orgId, from, to, 'model', !!me && canViewOrgUsage)
+  const myModelUsage = useMyUsage(from, to, 'model', !!me && !canViewOrgUsage)
+  const orgDayUsage = useUsage(orgId, from, to, 'day', !!me && canViewOrgUsage)
+  const myDayUsage = useMyUsage(from, to, 'day', !!me && !canViewOrgUsage)
+  const { data: modelUsage, isLoading: modelLoading } = canViewOrgUsage ? orgModelUsage : myModelUsage
+  const { data: dayUsage, isLoading: dayLoading } = canViewOrgUsage ? orgDayUsage : myDayUsage
 
   // Compute totals and model rows
   const { totalCost, modelRows, avgCostPerDay, topModel } = useMemo(() => {
@@ -310,8 +315,8 @@ export default function CostReportsPage() {
   const dayRowsDesc = useMemo(() => [...dayRows].reverse(), [dayRows])
   const modelColumns = useMemo(() => buildModelColumns(totalCost), [totalCost])
 
-  const isModelLoading = modelLoading && !!orgId
-  const isDayLoading = dayLoading && !!orgId
+  const isModelLoading = modelLoading && !!me && (canViewOrgUsage ? !!orgId : true)
+  const isDayLoading = dayLoading && !!me && (canViewOrgUsage ? !!orgId : true)
 
   return (
     <>

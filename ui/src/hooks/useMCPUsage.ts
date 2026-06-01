@@ -19,14 +19,32 @@ export interface MCPUsageResponse {
   data: MCPUsageDataPoint[]
 }
 
-export function useMCPUsage(orgId: string, from: string, to: string, groupBy: string) {
+export function useMCPUsage(
+  orgId: string,
+  from: string,
+  to: string,
+  groupBy: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['mcp-usage', orgId, from, to, groupBy],
     queryFn: () =>
       apiClient<MCPUsageResponse>(
         `/orgs/${orgId}/mcp-usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
       ),
-    enabled: !!orgId && !!from && !!to,
+    enabled: enabled && !!orgId && !!from && !!to,
+    staleTime: 60_000,
+  })
+}
+
+export function useMyMCPUsage(from: string, to: string, groupBy: string, enabled = true) {
+  return useQuery({
+    queryKey: ['mcp-usage', 'me', from, to, groupBy],
+    queryFn: () =>
+      apiClient<MCPUsageResponse>(
+        `/mcp-usage/me?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
+      ),
+    enabled: enabled && !!from && !!to,
     staleTime: 60_000,
   })
 }
