@@ -135,6 +135,17 @@ func (h *Handler) CreateUser(c fiber.Ctx) error {
 		return apierror.InternalError(c, "failed to create user")
 	}
 
+	if !req.IsSystemAdmin && keyInfo.OrgID != "" {
+		if _, err := h.DB.CreateOrgMembership(c.Context(), db.CreateOrgMembershipParams{
+			OrgID:  keyInfo.OrgID,
+			UserID: user.ID,
+			Role:   auth.RoleMember,
+		}); err != nil {
+			h.Log.ErrorContext(c.Context(), "create user: create org membership", slog.String("error", err.Error()))
+			return apierror.InternalError(c, "failed to add user to organization")
+		}
+	}
+
 	return c.Status(fiber.StatusCreated).JSON(userToResponse(user))
 }
 

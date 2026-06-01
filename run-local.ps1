@@ -12,7 +12,9 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BinDir = Join-Path $Root "bin"
 $DataDir = Join-Path $Root "data"
 $EnvFile = Join-Path $Root ".env.local"
-$Exe = Join-Path $BinDir "voidllm.exe"
+$ReleaseExe = Join-Path $BinDir "voidllm.exe"
+$LocalExe = Join-Path $BinDir "wai-local.exe"
+$Exe = $ReleaseExe
 $Config = Join-Path $Root "voidllm.yaml"
 $UiDir = Join-Path $Root "ui"
 
@@ -65,6 +67,35 @@ function Read-LocalEnv {
     $values
 }
 
+function Use-BackendBinary {
+    $goMod = Join-Path $Root "go.mod"
+    $go = Get-Command go -ErrorAction SilentlyContinue
+    if ((Test-Path $goMod) -and $go) {
+        Write-Host "Building wai backend from local source..."
+        Push-Location $Root
+        try {
+            & $go.Source build -o $LocalExe ./cmd/voidllm
+            if ($LASTEXITCODE -ne 0) {
+                throw "go build failed with exit code $LASTEXITCODE"
+            }
+        } finally {
+            Pop-Location
+        }
+        return $LocalExe
+    }
+
+    if (-not (Test-Path $ReleaseExe)) {
+        $zip = Join-Path $BinDir "voidllm-windows-amd64.zip"
+        $url = "https://github.com/voidmind-io/voidllm/releases/download/$Version/voidllm-windows-amd64.zip"
+        Write-Host "Downloading VoidLLM $Version..."
+        Invoke-WebRequest -Uri $url -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $BinDir -Force
+        Remove-Item $zip
+    }
+
+    return $ReleaseExe
+}
+
 New-Item -ItemType Directory -Force -Path $BinDir, $DataDir | Out-Null
 
 $envValues = Read-LocalEnv
@@ -115,14 +146,7 @@ if ($exists -ne "1") {
     & $psql -h localhost -p 5432 -U $PostgresUser -d postgres -c "CREATE DATABASE $DatabaseName;"
 }
 
-if (-not (Test-Path $Exe)) {
-    $zip = Join-Path $BinDir "voidllm-windows-amd64.zip"
-    $url = "https://github.com/voidmind-io/voidllm/releases/download/$Version/voidllm-windows-amd64.zip"
-    Write-Host "Downloading VoidLLM $Version..."
-    Invoke-WebRequest -Uri $url -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath $BinDir -Force
-    Remove-Item $zip
-}
+$Exe = Use-BackendBinary
 
 if ($BackendOnly) {
     Write-Host "Starting wai backend locally..."

@@ -120,6 +120,51 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+func TestCreateUser_AddsOrgMembershipForRegularUser(t *testing.T) {
+	t.Parallel()
+
+	app, database, keyCache := setupTestApp(t, "file:TestCreateUser_AddsOrgMembership?mode=memory&cache=private")
+	org := mustCreateOrg(t, database, "Create User Org", "create-user-org")
+	testKey := addTestKey(t, keyCache, auth.RoleOrgAdmin, org.ID)
+
+	req := httptest.NewRequest("POST", "/api/v1/users", bodyJSON(t, map[string]any{
+		"email":        "newmember@example.com",
+		"display_name": "New Member",
+		"password":     "securepassword",
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testKey)
+
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: testTimeout})
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 201; body: %s", resp.StatusCode, body)
+	}
+
+	var created map[string]any
+	decodeBody(t, resp.Body, &created)
+	userID, _ := created["id"].(string)
+	if userID == "" {
+		t.Fatalf("created user id missing: %#v", created)
+	}
+
+	role, gotOrgID, err := database.ResolveUserRole(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("ResolveUserRole: %v", err)
+	}
+	if role != auth.RoleMember {
+		t.Errorf("role = %q, want %q", role, auth.RoleMember)
+	}
+	if gotOrgID != org.ID {
+		t.Errorf("orgID = %q, want %q", gotOrgID, org.ID)
+	}
+}
+
 func TestCreateUser_NoAuth(t *testing.T) {
 	t.Parallel()
 
