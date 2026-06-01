@@ -14,7 +14,7 @@ import { useDashboardStats } from '../hooks/useDashboardStats'
 import type { BudgetWarning } from '../hooks/useDashboardStats'
 import { useTopModels } from '../hooks/useTopModels'
 import type { UsageDataPoint } from '../hooks/useTopModels'
-import { useUsage } from '../hooks/useUsage'
+import { useUsage, useMyUsage } from '../hooks/useUsage'
 import { useOrg } from '../hooks/useOrg'
 import { useModelHealth } from '../hooks/useModelHealth'
 import type { ModelHealthInfo } from '../hooks/useModelHealth'
@@ -311,13 +311,19 @@ export default function DashboardPage() {
     setShowUpdateDialog(false)
   }
 
-  const canViewOrgUsage = me?.role === 'system_admin' || me?.role === 'org_admin'
+  const canViewOrgUsage = me?.is_system_admin === true || me?.role === 'org_admin'
   const orgId = me?.org_id ?? ''
 
-  const { data: topModels, isLoading: modelsLoading } = useTopModels(
+  // Time-series data for the area chart
+  const { from, to } = useMemo(() => getTimeRange(timeRange), [timeRange])
+  const { from: from24h, to: to24h } = useMemo(() => getTimeRange('24h'), [])
+
+  const orgTopModels = useTopModels(
     orgId,
-    canViewOrgUsage,
+    !!me && canViewOrgUsage,
   )
+  const myTopModels = useMyUsage(from24h, to24h, 'model', !!me && !canViewOrgUsage)
+  const { data: topModels, isLoading: modelsLoading } = canViewOrgUsage ? orgTopModels : myTopModels
   const { data: modelHealth } = useModelHealth()
 
   // Performance rows combining usage data with health check latency
@@ -326,23 +332,23 @@ export default function DashboardPage() {
     [topModels?.data, modelHealth?.models],
   )
 
-  // Time-series data for the area chart
-  const { from, to } = useMemo(() => getTimeRange(timeRange), [timeRange])
-  const { from: from24h } = useMemo(() => getTimeRange('24h'), [])
-
-  const { data: usageSeries, isLoading: seriesLoading } = useUsage(
+  const orgUsageSeries = useUsage(
     orgId,
     from,
     to,
     'day',
+    !!me && canViewOrgUsage,
   )
+  const myUsageSeries = useMyUsage(from, to, 'day', !!me && !canViewOrgUsage)
+  const { data: usageSeries, isLoading: seriesLoading } = canViewOrgUsage ? orgUsageSeries : myUsageSeries
 
   // Team usage (admin only)
   const { data: teamUsage, isLoading: teamUsageLoading } = useUsage(
     orgId,
     from24h,
-    to,
+    to24h,
     'team',
+    !!me && canViewOrgUsage,
   )
 
   const scope = stats?.scope ?? 'user'
@@ -475,12 +481,12 @@ export default function DashboardPage() {
           )}
 
         {/* Token budget section */}
-        {me?.org_id != null && !statsLoading && (
+        {canViewOrgUsage && me?.org_id != null && !statsLoading && (
           <BudgetSection orgId={me.org_id} tokens24h={stats?.tokens_24h ?? 0} />
         )}
 
         {/* Requests over time */}
-        {orgId !== '' && (
+        {me != null && (canViewOrgUsage ? orgId !== '' : true) && (
           <div className="bg-bg-secondary rounded-xl border border-border p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary">Requests over Time</h2>
@@ -510,8 +516,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Top models + token distribution (admin only) */}
-        {canViewOrgUsage && (
+        {/* Top models + token distribution */}
+        {me != null && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Top Models */}
             <div className="bg-bg-secondary rounded-xl border border-border p-6">

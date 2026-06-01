@@ -68,6 +68,24 @@ function Read-LocalEnv {
     $values
 }
 
+function Set-OllamaPerformanceDefaults {
+    param([hashtable]$Values)
+
+    $defaults = @{
+        OLLAMA_FLASH_ATTENTION = "1"
+        OLLAMA_KEEP_ALIVE = "24h"
+        OLLAMA_MAX_LOADED_MODELS = "1"
+        OLLAMA_NUM_PARALLEL = "1"
+        OLLAMA_HOST = "127.0.0.1:11434"
+    }
+
+    foreach ($entry in $defaults.GetEnumerator()) {
+        if (-not $Values.ContainsKey($entry.Name)) {
+            $Values[$entry.Name] = $entry.Value
+        }
+    }
+}
+
 function Use-BackendBinary {
     $goMod = Join-Path $Root "go.mod"
     $go = Get-Command go -ErrorAction SilentlyContinue
@@ -163,6 +181,7 @@ if (-not $envValues.ContainsKey("POSTGRES_PASSWORD")) {
     }
     $envValues["POSTGRES_PASSWORD"] = $PostgresPassword
 }
+Set-OllamaPerformanceDefaults -Values $envValues
 
 $envValues.GetEnumerator() |
     Sort-Object Name |
