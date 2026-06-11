@@ -15,6 +15,19 @@ export function formatTokens(n: number): string {
   return new Intl.NumberFormat().format(n)
 }
 
+/** Format a byte count using binary units. */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let value = n
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
+}
+
 /** Format a number as USD currency. */
 export function formatCost(n: number): string {
   // Show more decimals for small amounts (LLM costs are often fractions of a cent)

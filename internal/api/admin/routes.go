@@ -46,6 +46,9 @@ func RegisterRoutes(app *fiber.App, handler *Handler, keyCache *cache.Cache[stri
 	// Dashboard stats — no role restriction.
 	api.Get("/dashboard/stats", handler.DashboardStats)
 
+	// System usage — host-level information, visible to system admins only.
+	api.Get("/system/usage", auth.RequireRole(auth.RoleSystemAdmin), handler.SystemUsage)
+
 	// Organizations
 	api.Post("/orgs", auth.RequireRole(auth.RoleSystemAdmin), handler.CreateOrg)
 	api.Get("/orgs", auth.RequireRole(auth.RoleOrgAdmin), handler.ListOrgs)

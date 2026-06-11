@@ -25,7 +25,6 @@ import ModelsLayout from './pages/ModelsLayout'
 import ModelsAccessTab from './pages/ModelsAccessTab'
 import MCPAccessTab from './pages/MCPAccessTab'
 import SettingsPage from './pages/SettingsPage'
-import LicensePage from './pages/LicensePage'
 import UsageLayout from './pages/usage/UsageLayout'
 import UsageOverviewPage from './pages/usage/UsageOverviewPage'
 import LLMUsagePage from './pages/usage/LLMUsagePage'
@@ -36,6 +35,7 @@ import AuditLogPage from './pages/AuditLogPage'
 import PlaygroundPage from './pages/PlaygroundPage'
 import SystemUsersPage from './pages/SystemUsersPage'
 import MCPServersPage from './pages/MCPServersPage'
+import SystemUsagePage from './pages/SystemUsagePage'
 import { ToastProvider } from './hooks/useToast'
 import { Shell } from './components/layout/Shell'
 import { PageHeader } from './components/ui/PageHeader'
@@ -104,10 +104,10 @@ export default function App() {
               </Route>
               <Route path="cost-reports" element={<CostReportsPage />} />
               <Route path="profile" element={<ProfilePage />} />
-              <Route path="license" element={<LicensePage />} />
               <Route path="audit-log" element={<AuditLogPage />} />
               <Route path="sso" element={<SSOConfigPage />} />
               <Route path="orgs" element={<OrganizationsPage />} />
+              <Route path="system-usage" element={<SystemUsagePage />} />
               <Route path="orgs/:orgId" element={<OrgDetailPage />}>
                 <Route index element={<Navigate to="members" replace />} />
                 <Route path="members" element={<OrgDetailMembersTab />} />

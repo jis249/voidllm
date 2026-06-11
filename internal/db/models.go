@@ -562,6 +562,8 @@ func (d *DB) GetModelIDByName(ctx context.Context, name string) (string, error) 
 //     current YAML values.
 //   - If the model exists with source="api" it is left untouched; API-created
 //     models take precedence over YAML configuration.
+//   - If a source="yaml" model is no longer present in the YAML file it is
+//     soft-deleted so the DB registry stays in sync with configuration.
 //
 // When a model entry carries an API key it is encrypted with AES-256-GCM
 // before being written to the database. The model's database ID is used as
@@ -572,7 +574,9 @@ func (d *DB) GetModelIDByName(ctx context.Context, name string) (string, error) 
 // encKey must be a 32-byte AES-256 key (see crypto.ParseKey).
 func (d *DB) SyncYAMLModels(ctx context.Context, models []config.ModelConfig, encKey []byte) error {
 	aliasOwner := make(map[string]string)
+	desiredModels := make(map[string]struct{}, len(models))
 	for _, m := range models {
+		desiredModels[m.Name] = struct{}{}
 		for _, a := range m.Aliases {
 			if owner, exists := aliasOwner[a]; exists {
 				return fmt.Errorf("sync yaml models: duplicate alias %q in models %q and %q", a, owner, m.Name)
@@ -697,6 +701,30 @@ func (d *DB) SyncYAMLModels(ctx context.Context, models []config.ModelConfig, en
 		// Sync deployments for the existing model.
 		if syncErr := d.syncYAMLDeployments(ctx, existing.ID, m.Deployments, encKey); syncErr != nil {
 			return fmt.Errorf("sync yaml models: deployments for %s: %w", m.Name, syncErr)
+		}
+	}
+
+	const pageLimit = 500
+	cursor := ""
+	for {
+		dbModels, err := d.ListModels(ctx, cursor, pageLimit, true)
+		if err != nil {
+			return fmt.Errorf("sync yaml models: list existing yaml models: %w", err)
+		}
+		for _, dbModel := range dbModels {
+			cursor = dbModel.ID
+			if dbModel.Source != "yaml" {
+				continue
+			}
+			if _, ok := desiredModels[dbModel.Name]; ok {
+				continue
+			}
+			if err := d.DeleteModel(ctx, dbModel.ID); err != nil {
+				return fmt.Errorf("sync yaml models: delete stale model %s: %w", dbModel.Name, err)
+			}
+		}
+		if len(dbModels) < pageLimit {
+			break
 		}
 	}
 	return nil

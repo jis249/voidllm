@@ -30,10 +30,7 @@ if ($backendPort -le 0) {
 
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
-$backend = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue
-if ($backend) {
-    Write-Host "wai backend already running on $BackendUrl"
-} else {
+function Start-LocalBackend {
     $runLocalArgs = @{
         Version = $Version
         PostgresUser = $PostgresUser
@@ -49,6 +46,31 @@ if ($backend) {
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
+}
+
+$backend = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue
+if ($backend) {
+    $backendProcessId = ($backend | Select-Object -First 1).OwningProcess
+    $backendProcess = Get-Process -Id $backendProcessId -ErrorAction SilentlyContinue
+    $backendPath = if ($backendProcess) { $backendProcess.Path } else { "" }
+    $binDir = Join-Path $Root "bin"
+
+    if ($backendProcess -and $backendPath -and $backendPath.StartsWith($binDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "Restarting wai backend on $BackendUrl so local model config is refreshed..."
+        Stop-Process -Id $backendProcessId -Force
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            $backend = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue
+            if (-not $backend) {
+                break
+            }
+        }
+        Start-LocalBackend
+    } else {
+        throw "Port $backendPort is already in use by process $backendProcessId ($($backendProcess.ProcessName)). Stop it or choose a different -BackendUrl."
+    }
+} else {
+    Start-LocalBackend
 }
 
 Write-Host "Configuring IIS site '$SiteName' on http://localhost:$Port..."

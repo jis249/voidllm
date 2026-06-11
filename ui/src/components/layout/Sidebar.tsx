@@ -130,14 +130,6 @@ function IconDollar() {
   )
 }
 
-function IconShield() {
-  return (
-    <svg {...iconProps}>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  )
-}
-
 function IconBuilding() {
   return (
     <svg {...iconProps}>
@@ -170,6 +162,16 @@ function IconPlug() {
       <path d="M15 7V2" />
       <path d="M6 7h12" />
       <path d="M6 7v4a6 6 0 0 0 12 0V7" />
+    </svg>
+  )
+}
+
+function IconServer() {
+  return (
+    <svg {...iconProps}>
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 8h.01M7 17h.01M11 8h6M11 17h6" />
     </svg>
   )
 }
@@ -212,7 +214,7 @@ function buildNavigation(): NavGroup[] {
         { label: 'Organizations', path: '/orgs', icon: <IconBuilding />, end: false },
         { label: 'Users', path: '/users', icon: <IconPersonPlus /> },
         { label: 'Models', path: '/models', icon: <IconCube />, minRole: 'system_admin' },
-        { label: 'License', path: '/license', icon: <IconShield /> },
+        { label: 'System Usage', path: '/system-usage', icon: <IconServer /> },
       ],
     },
   ]

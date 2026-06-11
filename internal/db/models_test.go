@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/voidmind-io/voidllm/internal/config"
 )
 
 // TestCreateModel_WithFallbackModelID verifies that a model can be created
@@ -126,4 +128,45 @@ func TestGetModelIDByName(t *testing.T) {
 			t.Errorf("GetModelIDByName(nonexistent) error = %v, want ErrNotFound", err)
 		}
 	})
+}
+
+func TestSyncYAMLModels_DeletesStaleYAMLModels(t *testing.T) {
+	t.Parallel()
+
+	d := openMigratedDB(t)
+	ctx := context.Background()
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+
+	stale, err := d.CreateModel(ctx, CreateModelParams{
+		Name:     "stale-yaml-model",
+		Provider: "ollama",
+		BaseURL:  "http://localhost:11434/v1",
+		Source:   "yaml",
+	})
+	if err != nil {
+		t.Fatalf("CreateModel(stale yaml): %v", err)
+	}
+	apiModel := mustCreateModel(t, d, "api-owned-model")
+
+	err = d.SyncYAMLModels(ctx, []config.ModelConfig{
+		{
+			Name:     "current-yaml-model",
+			Provider: "ollama",
+			BaseURL:  "http://localhost:11434/v1",
+			Aliases:  []string{"default"},
+		},
+	}, encKey)
+	if err != nil {
+		t.Fatalf("SyncYAMLModels: %v", err)
+	}
+
+	if _, err := d.GetModel(ctx, stale.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale yaml model lookup error = %v, want ErrNotFound", err)
+	}
+	if _, err := d.GetModel(ctx, apiModel.ID); err != nil {
+		t.Fatalf("api model should be preserved: %v", err)
+	}
+	if _, err := d.GetModelByName(ctx, "current-yaml-model"); err != nil {
+		t.Fatalf("current yaml model should exist: %v", err)
+	}
 }

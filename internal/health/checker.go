@@ -296,7 +296,8 @@ func execProbe(ctx context.Context, client *http.Client, t probeTarget, level pr
 // that does not expose internal URLs, IP addresses, or stack details.
 func sanitizeError(err error) string {
 	msg := err.Error()
-	if strings.Contains(msg, "connection refused") {
+	if strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "No connection could be made because the target machine actively refused it") {
 		return "connection refused"
 	}
 	if strings.Contains(msg, "connection reset") {

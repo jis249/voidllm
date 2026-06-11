@@ -181,6 +181,20 @@ func (h *Handler) DashboardStats(c fiber.Ctx) error {
 		)
 		return apierror.InternalError(c, "failed to load dashboard stats")
 	}
+	if agg.TotalRequests == 0 && agg.TotalTokens == 0 {
+		rawAgg, rawErr := h.DB.GetScopedUsageAggregates(ctx, filter, from, time.Now().UTC(), "")
+		if rawErr != nil {
+			h.Log.LogAttrs(ctx, slog.LevelError, "dashboard: get raw scoped usage fallback",
+				slog.String("org_id", orgID),
+				slog.String("scope", resp.Scope),
+				slog.String("error", rawErr.Error()),
+			)
+			return apierror.InternalError(c, "failed to load dashboard stats")
+		}
+		if len(rawAgg) > 0 {
+			agg = rawAgg[0]
+		}
+	}
 
 	resp.Requests24h = agg.TotalRequests
 	resp.Tokens24h = agg.TotalTokens
