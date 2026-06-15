@@ -481,3 +481,75 @@ func TestSanitizeError_ConnectionRefused(t *testing.T) {
 		t.Errorf("LastError = %q, want %q", mh.LastError, "connection refused")
 	}
 }
+
+func newAzureRegistry(t *testing.T, baseURL, deployment string) *proxy.Registry {
+	t.Helper()
+	reg, err := proxy.NewRegistry([]config.ModelConfig{
+		{
+			Name:            "gpt-5.4",
+			Provider:        "azure",
+			BaseURL:         baseURL,
+			APIKey:          "azure-secret",
+			AzureDeployment: deployment,
+			AzureAPIVersion: "2024-10-21",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	return reg
+}
+
+// TestProbeAzure_Healthy verifies Azure models use deployment URLs and api-key auth.
+func TestProbeAzure_Healthy(t *testing.T) {
+	t.Parallel()
+
+	const deployment = "gpt-5.4"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "azure-secret" {
+			http.Error(w, "missing api-key", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/openai/models":
+			if r.URL.Query().Get("api-version") != "2024-10-21" {
+				http.Error(w, "bad api-version", http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/openai/deployments/" + deployment + "/chat/completions":
+			if r.URL.Query().Get("api-version") != "2024-10-21" {
+				http.Error(w, "bad api-version", http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	reg := newAzureRegistry(t, srv.URL, deployment)
+	allEnabled := config.HealthCheckConfig{
+		Health:     config.HealthProbeConfig{Enabled: true, Interval: 24 * time.Hour},
+		Models:     config.HealthProbeConfig{Enabled: true, Interval: 24 * time.Hour},
+		Functional: config.HealthProbeConfig{Enabled: true, Interval: 24 * time.Hour},
+	}
+	c := health.NewChecker(reg, allEnabled, newLogger())
+	stop := c.Start()
+	t.Cleanup(stop)
+
+	mh, ok := c.GetHealth("gpt-5.4")
+	if !ok {
+		t.Fatal("GetHealth returned false; probe did not run")
+	}
+	if mh.ModelsOK == nil || !*mh.ModelsOK {
+		t.Errorf("ModelsOK = %v, want true", mh.ModelsOK)
+	}
+	if mh.FunctionalOK == nil || !*mh.FunctionalOK {
+		t.Errorf("FunctionalOK = %v, want true", mh.FunctionalOK)
+	}
+	if mh.Status != "healthy" {
+		t.Errorf("Status = %q, want %q", mh.Status, "healthy")
+	}
+}

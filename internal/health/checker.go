@@ -358,10 +358,41 @@ func probeHealth(ctx context.Context, client *http.Client, t probeTarget) (int64
 	return latencyMs, nil
 }
 
+// defaultAzureAPIVersion is used when a model has no azure_api_version configured.
+const defaultAzureAPIVersion = "2024-10-21"
+
+func azureAPIVersion(version string) string {
+	if version != "" {
+		return version
+	}
+	return defaultAzureAPIVersion
+}
+
+func azureModelsURL(baseURL, version string) string {
+	return strings.TrimRight(baseURL, "/") +
+		"/openai/models?api-version=" + azureAPIVersion(version)
+}
+
+func azureDeploymentURL(baseURL, deployment, upstreamPath, version string) string {
+	return strings.TrimRight(baseURL, "/") +
+		"/openai/deployments/" + deployment +
+		"/" + upstreamPath +
+		"?api-version=" + azureAPIVersion(version)
+}
+
+func azureRequiresMaxCompletionTokens(t probeTarget) bool {
+	name := strings.ToLower(t.modelName)
+	deployment := strings.ToLower(t.azureDeployment)
+	return strings.HasPrefix(name, "gpt-5") || strings.HasPrefix(deployment, "gpt-5")
+}
+
 // probeModels performs a GET to <base_url>/models and returns success on any
-// 2xx HTTP response.
+// 2xx HTTP response. Azure OpenAI uses /openai/models with an api-version query.
 func probeModels(ctx context.Context, client *http.Client, t probeTarget) (int64, error) {
 	rawURL := strings.TrimRight(t.baseURL, "/") + "/models"
+	if t.provider == "azure" {
+		rawURL = azureModelsURL(t.baseURL, t.azureAPIVersion)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -409,13 +440,19 @@ func probeFunctionalChat(ctx context.Context, client *http.Client, t probeTarget
 
 	upstreamModel := t.modelName
 	if t.provider == "azure" && t.azureDeployment != "" {
+		rawURL = azureDeploymentURL(t.baseURL, t.azureDeployment, "chat/completions", t.azureAPIVersion)
 		upstreamModel = t.azureDeployment
 	}
 
 	payload := map[string]any{
-		"model":      upstreamModel,
-		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-		"max_tokens": 1,
+		"model":    upstreamModel,
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	}
+	if azureRequiresMaxCompletionTokens(t) {
+		// GPT-5 deployments reject max_tokens and need a small but usable budget.
+		payload["max_completion_tokens"] = 16
+	} else {
+		payload["max_tokens"] = 1
 	}
 	body, err := jsonx.Marshal(payload)
 	if err != nil {
@@ -449,9 +486,14 @@ func probeFunctionalChat(ctx context.Context, client *http.Client, t probeTarget
 // short input string to verify end-to-end functionality of an embedding model.
 func probeEmbedding(ctx context.Context, client *http.Client, t probeTarget) (int64, error) {
 	rawURL := strings.TrimRight(t.baseURL, "/") + "/embeddings"
+	upstreamModel := t.modelName
+	if t.provider == "azure" && t.azureDeployment != "" {
+		rawURL = azureDeploymentURL(t.baseURL, t.azureDeployment, "embeddings", t.azureAPIVersion)
+		upstreamModel = t.azureDeployment
+	}
 
 	payload := map[string]any{
-		"model": t.modelName,
+		"model": upstreamModel,
 		"input": "test",
 	}
 	body, err := jsonx.Marshal(payload)
@@ -483,16 +525,20 @@ func probeEmbedding(ctx context.Context, client *http.Client, t probeTarget) (in
 }
 
 // setAuthHeaders adds the appropriate authentication headers to req based on
-// the target's provider. Anthropic uses the x-api-key header scheme; all other
-// providers use Bearer token authorization.
+// the target's provider. Anthropic uses x-api-key; Azure uses api-key; all
+// other providers use Bearer token authorization.
 func setAuthHeaders(req *http.Request, t probeTarget) {
 	if t.apiKey == "" {
 		return
 	}
-	if t.provider == "anthropic" {
+	switch t.provider {
+	case "anthropic":
 		req.Header.Set("x-api-key", t.apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
-	} else {
+	case "azure":
+		req.Header.Del("Authorization")
+		req.Header.Set("api-key", t.apiKey)
+	default:
 		req.Header.Set("Authorization", "Bearer "+t.apiKey)
 	}
 }
