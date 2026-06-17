@@ -360,7 +360,7 @@ func (p *ProxyHandler) Handle(c fiber.Ctx) error {
 			"circuit_open", "upstream temporarily unavailable")
 	}
 
-	if isStreamingResponse(resp) {
+	if isStreamingResponse(resp) && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var breaker *circuitbreaker.Breaker
 		if p.CircuitBreakers != nil {
 			breaker = p.CircuitBreakers.Get(deploymentKey(currentModel.Name, usedDep.Name))

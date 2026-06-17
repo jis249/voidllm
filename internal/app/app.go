@@ -133,6 +133,15 @@ func (s *dbUsageSeeder) QueryUsageSeed(ctx context.Context, since time.Time) (ra
 func New(cfg *config.Config, log *slog.Logger, devMode bool) (*Application, error) {
 	ctx := context.Background()
 
+	for _, m := range cfg.Models {
+		if m.Provider == "gemini" && m.APIKey != "" && !strings.HasPrefix(m.APIKey, "AIza") {
+			log.LogAttrs(ctx, slog.LevelWarn,
+				"gemini model API key does not look like a Google AI Studio key; create one at https://aistudio.google.com/apikey (expected AIza... prefix)",
+				slog.String("model", m.Name),
+			)
+		}
+	}
+
 	enterpriseDev := devMode && (os.Getenv("VOIDLLM_ENTERPRISE_DEV") == "1" || os.Getenv("VOIDLLM_ENTERPRISE_DEV") == "true")
 	if enterpriseDev {
 		log.LogAttrs(ctx, slog.LevelWarn, "ENTERPRISE DEV MODE: all enterprise features enabled without license")

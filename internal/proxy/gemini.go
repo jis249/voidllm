@@ -96,7 +96,7 @@ func geminiFinishReason(reason string) string {
 //   - Converts the messages array to the Gemini contents format.
 //   - Maps generation parameters (temperature, top_p, max_tokens, stop, n).
 //   - Detects stream:true and stores it in adapter state for TransformURL.
-func (a *GeminiAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
+func (a *GeminiAdapter) TransformRequest(body []byte, model Model) ([]byte, error) {
 	var doc map[string]jsonx.RawMessage
 	if err := jsonx.Unmarshal(body, &doc); err != nil {
 		return nil, fmt.Errorf("gemini transform request: unmarshal body: %w", err)
@@ -126,6 +126,7 @@ func (a *GeminiAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
 
 	var contents []geminiContent
 	var systemParts []geminiPart
+	useNativeSystemRole := strings.HasPrefix(strings.ToLower(model.Name), "gemma-")
 
 	if raw, ok := doc["messages"]; ok {
 		var msgs []oaiMessage
@@ -135,22 +136,17 @@ func (a *GeminiAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
 
 		for _, m := range msgs {
 			if m.Role == "system" {
-				// System content may be a plain string or a content-block array.
-				var text string
-				if err := jsonx.Unmarshal(m.Content, &text); err == nil {
-					systemParts = append(systemParts, geminiPart{Text: text})
+				parts := openAIContentParts(m.Content)
+				if len(parts) == 0 {
+					continue
+				}
+				if useNativeSystemRole {
+					contents = append(contents, geminiContent{
+						Role:  "system",
+						Parts: parts,
+					})
 				} else {
-					var blocks []struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					}
-					if err := jsonx.Unmarshal(m.Content, &blocks); err == nil {
-						for _, b := range blocks {
-							if b.Type == "text" && b.Text != "" {
-								systemParts = append(systemParts, geminiPart{Text: b.Text})
-							}
-						}
-					}
+					systemParts = append(systemParts, parts...)
 				}
 				continue
 			}
@@ -160,27 +156,8 @@ func (a *GeminiAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
 				geminiRole = "model"
 			}
 
-			// Content may be a plain string or an array of content blocks.
-			var text string
-			var parts []geminiPart
-			if err := jsonx.Unmarshal(m.Content, &text); err == nil {
-				parts = []geminiPart{{Text: text}}
-			} else {
-				// Try array of content blocks: [{type:"text", text:"..."}]
-				var blocks []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				}
-				if err := jsonx.Unmarshal(m.Content, &blocks); err == nil {
-					for _, b := range blocks {
-						if b.Type == "text" && b.Text != "" {
-							parts = append(parts, geminiPart{Text: b.Text})
-						}
-					}
-				}
-			}
+			parts := openAIContentParts(m.Content)
 			if len(parts) == 0 {
-				// Fall back to an empty text part so the message is still included.
 				parts = []geminiPart{{Text: ""}}
 			}
 
@@ -263,6 +240,32 @@ func (a *GeminiAdapter) TransformRequest(body []byte, _ Model) ([]byte, error) {
 		return nil, fmt.Errorf("gemini transform request: marshal: %w", err)
 	}
 	return out, nil
+}
+
+func openAIContentParts(content jsonx.RawMessage) []geminiPart {
+	var text string
+	if err := jsonx.Unmarshal(content, &text); err == nil {
+		if text == "" {
+			return nil
+		}
+		return []geminiPart{{Text: text}}
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := jsonx.Unmarshal(content, &blocks); err != nil {
+		return nil
+	}
+
+	parts := make([]geminiPart, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			parts = append(parts, geminiPart{Text: b.Text})
+		}
+	}
+	return parts
 }
 
 // TransformURL builds the full Gemini or Vertex AI generateContent URL.

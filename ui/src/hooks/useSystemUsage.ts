@@ -58,10 +58,11 @@ export interface SystemUsage {
   configuration: Record<string, string>
 }
 
-export function useSystemUsage() {
+export function useSystemUsage(enabled = true) {
   return useQuery({
     queryKey: ['system-usage'],
     queryFn: () => apiClient<SystemUsage>('/system/usage'),
     refetchInterval: 15_000,
+    enabled,
   })
 }

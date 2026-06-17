@@ -91,7 +91,7 @@ function StorageRow({ disk }: { disk: SystemStorageInfo }) {
 
 export default function SystemUsagePage() {
   const { data: me } = useMe()
-  const { data, isLoading, error } = useSystemUsage()
+  const { data, isLoading, error } = useSystemUsage(me?.is_system_admin === true)
 
   if (me && !me.is_system_admin) {
     return (

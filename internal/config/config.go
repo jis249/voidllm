@@ -541,6 +541,8 @@ func Load(path string) (*Config, bool, error) {
 		}
 	}
 
+	loadLocalEnvFile(path)
+
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("config: read file %q: %w", path, err)

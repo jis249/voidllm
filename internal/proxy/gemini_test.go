@@ -109,6 +109,28 @@ func TestGeminiTransformRequest(t *testing.T) {
 			},
 		},
 		{
+			name:  "gemma models keep system role in contents",
+			input: `{"model":"gemma-4-26b-a4b-it","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Hi"}]}`,
+			checkFn: func(t *testing.T, req geminiRequest, _ *GeminiAdapter) {
+				t.Helper()
+				if req.SystemInstruction != nil {
+					t.Fatal("systemInstruction should be nil for gemma models")
+				}
+				if len(req.Contents) != 2 {
+					t.Fatalf("len(contents) = %d, want 2", len(req.Contents))
+				}
+				if req.Contents[0].Role != "system" {
+					t.Fatalf("contents[0].role = %q, want system", req.Contents[0].Role)
+				}
+				if req.Contents[0].Parts[0].Text != "You are helpful." {
+					t.Errorf("contents[0].parts[0].text = %q, want %q", req.Contents[0].Parts[0].Text, "You are helpful.")
+				}
+				if req.Contents[1].Role != "user" {
+					t.Fatalf("contents[1].role = %q, want user", req.Contents[1].Role)
+				}
+			},
+		},
+		{
 			name:  "mixed roles user assistant user preserved in order",
 			input: `{"model":"gemini-1.5-pro","messages":[{"role":"user","content":"Q1"},{"role":"assistant","content":"A1"},{"role":"user","content":"Q2"}]}`,
 			checkFn: func(t *testing.T, req geminiRequest, _ *GeminiAdapter) {
@@ -330,7 +352,11 @@ func TestGeminiTransformRequest(t *testing.T) {
 			t.Parallel()
 
 			a := &GeminiAdapter{}
-			out, err := a.TransformRequest([]byte(tc.input), Model{})
+			var doc struct {
+				Model string `json:"model"`
+			}
+			_ = json.Unmarshal([]byte(tc.input), &doc)
+			out, err := a.TransformRequest([]byte(tc.input), Model{Name: doc.Model})
 
 			if tc.wantErr {
 				if err == nil {

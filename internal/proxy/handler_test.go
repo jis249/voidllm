@@ -1149,6 +1149,54 @@ func TestHandle_NoFallbackOn400(t *testing.T) {
 	}
 }
 
+// TestHandle_StreamingUpstreamErrorForwardsBody verifies that a streaming
+// upstream 4xx with text/event-stream content type still returns the JSON
+// error body instead of an empty SSE response.
+func TestHandle_StreamingUpstreamErrorForwardsBody(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "streamGenerateContent") {
+			t.Errorf("path = %q, want streamGenerateContent", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"invalid gemini request","code":400}}`)
+	}))
+	t.Cleanup(upstream.Close)
+
+	reg, err := NewRegistry([]config.ModelConfig{{
+		Name:     "gemma-4-26b-a4b-it",
+		Provider: "gemini",
+		BaseURL:  upstream.URL,
+		APIKey:   "test-key",
+	}})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	handler := NewProxyHandler(reg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	app := testApp(t, handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"gemma-4-26b-a4b-it","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Hi"}],"stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, testTimeout)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, http.StatusBadRequest, body)
+	}
+	if !strings.Contains(string(body), "invalid gemini request") {
+		t.Fatalf("body = %q, want upstream error message", body)
+	}
+}
+
 // TestHandle_NoFallbackOn401 verifies 401 is not fallback-eligible.
 func TestHandle_NoFallbackOn401(t *testing.T) {
 	t.Parallel()

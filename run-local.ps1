@@ -86,7 +86,20 @@ function Set-OllamaPerformanceDefaults {
     }
 }
 
+function Initialize-GoPath {
+    if (Get-Command go -ErrorAction SilentlyContinue) {
+        return
+    }
+
+    $defaultGoBin = "C:\Program Files\Go\bin"
+    if (Test-Path (Join-Path $defaultGoBin "go.exe")) {
+        $env:Path = "$defaultGoBin;$env:Path"
+    }
+}
+
 function Use-BackendBinary {
+    Initialize-GoPath
+
     $goMod = Join-Path $Root "go.mod"
     $go = Get-Command go -ErrorAction SilentlyContinue
     if ((Test-Path $goMod) -and $go) {
@@ -100,6 +113,14 @@ function Use-BackendBinary {
         } finally {
             Pop-Location
         }
+        return $LocalExe
+    }
+
+    if ((Test-Path $LocalExe) -and (
+            -not (Test-Path $ReleaseExe) -or
+            (Get-Item $LocalExe).LastWriteTime -gt (Get-Item $ReleaseExe).LastWriteTime
+        )) {
+        Write-Host "Using previously built wai backend at $LocalExe"
         return $LocalExe
     }
 
