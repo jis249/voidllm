@@ -243,18 +243,7 @@ func (h *Handler) HandleMCPProxy(c fiber.Ctx) error {
 	metrics.MCPToolCallDurationSeconds.WithLabelValues(alias, metricsMethod).Observe(duration.Seconds())
 
 	if h.MCPLogger != nil {
-		h.MCPLogger.Log(usage.MCPToolCallEvent{
-			KeyID:            ki.ID,
-			KeyType:          ki.KeyType,
-			OrgID:            ki.OrgID,
-			TeamID:           ki.TeamID,
-			UserID:           ki.UserID,
-			ServiceAccountID: ki.ServiceAccountID,
-			ServerAlias:      alias,
-			ToolName:         meta.ToolName,
-			DurationMS:       int(duration.Milliseconds()),
-			Status:           status,
-		})
+		h.logMCPToolCallEvent(ki, alias, meta.ToolName, int(duration.Milliseconds()), status, false, "")
 	}
 
 	if callErr != nil {
@@ -372,6 +361,52 @@ func parseMCPRequestMeta(body []byte) mcpRequestMeta {
 	return meta
 }
 
+// mcpResponseStatus derives a usage-log status from a JSON-RPC response body
+// produced by the in-process MCP server.
+func mcpResponseStatus(result []byte) string {
+	var resp struct {
+		Error  *struct{} `json:"error"`
+		Result *struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if jsonx.Unmarshal(result, &resp) != nil {
+		return "error"
+	}
+	if resp.Error != nil {
+		return "error"
+	}
+	if resp.Result != nil && resp.Result.IsError {
+		return "error"
+	}
+	return "success"
+}
+
+// logMCPToolCallEvent records an MCP tool call for usage tracking when the
+// logger is configured and the caller is authenticated.
+func (h *Handler) logMCPToolCallEvent(ki *auth.KeyInfo, serverAlias, toolName string, durationMS int, status string, codeMode bool, executionID string) {
+	if h.MCPLogger == nil || ki == nil {
+		return
+	}
+	ev := usage.MCPToolCallEvent{
+		KeyID:            ki.ID,
+		KeyType:          ki.KeyType,
+		OrgID:            ki.OrgID,
+		TeamID:           ki.TeamID,
+		UserID:           ki.UserID,
+		ServiceAccountID: ki.ServiceAccountID,
+		ServerAlias:      serverAlias,
+		ToolName:         toolName,
+		DurationMS:       durationMS,
+		Status:           status,
+		CodeMode:         codeMode,
+	}
+	if executionID != "" {
+		ev.CodeModeExecutionID = executionID
+	}
+	h.MCPLogger.Log(ev)
+}
+
 // buildInitializeRequest returns a minimal MCP initialize JSON-RPC request
 // that VoidLLM sends on behalf of the downstream client when re-establishing
 // an expired session.
@@ -438,7 +473,22 @@ func buildToolCallRequest(toolName string, args jsonx.RawMessage) []byte {
 func (h *Handler) CallMCPTool(ctx context.Context, ki *auth.KeyInfo, serverAlias, toolName string, args jsonx.RawMessage, codeMode bool, executionID string) (jsonx.RawMessage, error) {
 	// Built-in VoidLLM management server — dispatch in-process instead of HTTP.
 	if serverAlias == "voidllm" && h.MCPServer != nil {
-		return h.callBuiltinTool(ctx, ki, toolName, args)
+		start := time.Now()
+		result, err := h.callBuiltinTool(ctx, ki, toolName, args)
+		durationMS := int(time.Since(start).Milliseconds())
+		status := "success"
+		if err != nil {
+			status = "error"
+		} else if result != nil {
+			status = mcpResponseStatus(result)
+		}
+		metrics.MCPToolCallsTotal.WithLabelValues(serverAlias, "tools/call", status).Inc()
+		metrics.MCPToolCallDurationSeconds.WithLabelValues(serverAlias, "tools/call").Observe(time.Since(start).Seconds())
+		h.logMCPToolCallEvent(ki, serverAlias, toolName, durationMS, status, codeMode, executionID)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 
 	var server *db.MCPServer
@@ -553,20 +603,7 @@ func (h *Handler) CallMCPTool(ctx context.Context, ki *auth.KeyInfo, serverAlias
 	metrics.MCPToolCallDurationSeconds.WithLabelValues(serverAlias, "tools/call").Observe(duration.Seconds())
 
 	if h.MCPLogger != nil {
-		h.MCPLogger.Log(usage.MCPToolCallEvent{
-			KeyID:               ki.ID,
-			KeyType:             ki.KeyType,
-			OrgID:               ki.OrgID,
-			TeamID:              ki.TeamID,
-			UserID:              ki.UserID,
-			ServiceAccountID:    ki.ServiceAccountID,
-			ServerAlias:         serverAlias,
-			ToolName:            toolName,
-			DurationMS:          int(duration.Milliseconds()),
-			Status:              status,
-			CodeMode:            codeMode,
-			CodeModeExecutionID: executionID,
-		})
+		h.logMCPToolCallEvent(ki, serverAlias, toolName, int(duration.Milliseconds()), status, codeMode, executionID)
 	}
 
 	if callErr != nil {

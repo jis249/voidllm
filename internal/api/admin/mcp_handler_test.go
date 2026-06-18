@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -167,6 +168,90 @@ func mcpNotification(method string) string {
 }
 
 // ---- POST /api/v1/mcp/voidllm — initialize ----------------------------------
+
+func TestMCPHandler_LoggerCalled(t *testing.T) {
+	t.Parallel()
+
+	app, _, key := setupTestAppWithMCPAndLogger(t, "file:TestMCPHandler_LoggerCalled?mode=memory&cache=private")
+
+	resp := mcpPost(t, app, key, mcpRequest(1, "tools/list", nil))
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, raw)
+	}
+
+	logger := testMCPLoggerFromApp(t)
+	if len(logger.events) != 1 {
+		t.Fatalf("logger received %d events, want 1", len(logger.events))
+	}
+	ev := logger.events[0]
+	if ev.ServerAlias != "voidllm" {
+		t.Errorf("ServerAlias = %q, want %q", ev.ServerAlias, "voidllm")
+	}
+	if ev.ToolName != "tools/list" {
+		t.Errorf("ToolName = %q, want %q", ev.ToolName, "tools/list")
+	}
+	if ev.Status != "success" {
+		t.Errorf("Status = %q, want %q", ev.Status, "success")
+	}
+}
+
+// testMCPLogger is stored on the handler via setupTestAppWithMCPAndLogger.
+var testMCPLoggers sync.Map
+
+func setupTestAppWithMCPAndLogger(t *testing.T, dsn string) (*fiber.App, *cache.Cache[string, auth.KeyInfo], string) {
+	t.Helper()
+
+	ctx := context.Background()
+	database, err := db.Open(ctx, config.DatabaseConfig{
+		Driver:          "sqlite",
+		DSN:             dsn,
+		MaxOpenConns:    1,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("open test DB: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	if err := db.RunMigrations(ctx, database.SQL(), db.SQLiteDialect{}, slog.Default()); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	keyCache := cache.New[string, auth.KeyInfo]()
+	mcpServer := mcp.NewServer("voidllm", "test")
+	mcp.RegisterVoidLLMTools(mcpServer, mcpTestDeps())
+	logger := &mockMCPLogger{}
+	testMCPLoggers.Store(t.Name(), logger)
+	t.Cleanup(func() { testMCPLoggers.Delete(t.Name()) })
+
+	handler := &admin.Handler{
+		DB:         database,
+		HMACSecret: testHMACSecret,
+		KeyCache:   keyCache,
+		License:    license.NewHolder(license.Verify("", true)),
+		Log:        noopLogger(t),
+		MCPServer:  mcpServer,
+		MCPLogger:  logger,
+	}
+
+	app := fiber.New()
+	admin.RegisterRoutes(app, handler, keyCache, testHMACSecret, nil)
+	key := addTestKey(t, keyCache, auth.RoleMember, "org-mcp-logger")
+	return app, keyCache, key
+}
+
+func testMCPLoggerFromApp(t *testing.T) *mockMCPLogger {
+	t.Helper()
+	v, ok := testMCPLoggers.Load(t.Name())
+	if !ok {
+		t.Fatal("test MCP logger not found for test")
+	}
+	return v.(*mockMCPLogger)
+}
 
 func TestMCPHandler_Initialize(t *testing.T) {
 	t.Parallel()

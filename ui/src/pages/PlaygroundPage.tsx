@@ -34,6 +34,19 @@ interface UsageInfo {
   duration: number
 }
 
+function parseProxyError(body: unknown, status: number, statusText: string): string {
+  if (body && typeof body === 'object') {
+    const err = (body as { error?: unknown; message?: unknown }).error
+    if (typeof err === 'string' && err.trim()) return err
+    if (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') {
+      return (err as { message: string }).message
+    }
+    const message = (body as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return `HTTP ${status}: ${statusText}`
+}
+
 interface EmbedResult {
   dimensions: number
   vector: number[]
@@ -294,10 +307,7 @@ export default function PlaygroundPage() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null)
-        const raw =
-          (body as { error?: { message?: string } } | null)?.error?.message ??
-          (body as { message?: string } | null)?.message ??
-          `HTTP ${res.status}: ${res.statusText}`
+        const raw = parseProxyError(body, res.status, res.statusText)
         const errMessage = raw.length > 200 ? raw.slice(0, 200) + '...' : raw
         setError(errMessage)
         return
@@ -432,8 +442,8 @@ export default function PlaygroundPage() {
       body: JSON.stringify({ model, input }),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => null) as { error?: { message?: string } } | null
-      const msg = body?.error?.message ?? `HTTP ${res.status}`
+      const body = await res.json().catch(() => null)
+      const msg = parseProxyError(body, res.status, res.statusText)
       throw new Error(msg.length > 200 ? msg.slice(0, 200) + '...' : msg)
     }
     const data = (await res.json()) as { data?: { embedding?: number[] }[] }

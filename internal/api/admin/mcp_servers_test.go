@@ -18,6 +18,7 @@ import (
 	"github.com/voidmind-io/voidllm/internal/cache"
 	"github.com/voidmind-io/voidllm/internal/config"
 	"github.com/voidmind-io/voidllm/internal/db"
+	"github.com/voidmind-io/voidllm/internal/jsonx"
 	"github.com/voidmind-io/voidllm/internal/license"
 	"github.com/voidmind-io/voidllm/internal/mcp"
 )
@@ -807,6 +808,150 @@ func TestTestMCPServerConnection_API_NotFound(t *testing.T) {
 
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestTestMCPServerConnection_EmptyURL(t *testing.T) {
+	t.Parallel()
+
+	dsn := "file:TestTestMCPServerConnection_EmptyURL?mode=memory&cache=private"
+	app, database, keyCache := setupMCPServersTestApp(t, dsn)
+	key := addTestKey(t, keyCache, auth.RoleSystemAdmin, "org-test-empty-url")
+
+	s, err := database.CreateMCPServer(context.Background(), db.CreateMCPServerParams{
+		Name:     "No URL",
+		Alias:    "no-url",
+		URL:      "",
+		AuthType: "none",
+	})
+	if err != nil {
+		t.Fatalf("create MCP server: %v", err)
+	}
+
+	resp := mcpServerRequest(t, app, http.MethodPost,
+		"/api/v1/mcp-servers/"+s.ID+"/test", key, nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, raw)
+	}
+
+	var got map[string]any
+	decodeBody(t, resp.Body, &got)
+	if got["success"] != false {
+		t.Errorf("success = %v, want false", got["success"])
+	}
+	if got["error"] != "MCP server URL is not configured" {
+		t.Errorf("error = %q, want %q", got["error"], "MCP server URL is not configured")
+	}
+}
+
+func TestListMCPServers_BuiltinProxyURL(t *testing.T) {
+	t.Parallel()
+
+	dsn := "file:TestListMCPServers_BuiltinProxyURL?mode=memory&cache=private"
+	app, database, keyCache := setupMCPServersTestApp(t, dsn)
+	if _, err := database.EnsureBuiltinMCPServer(t.Context()); err != nil {
+		t.Fatalf("EnsureBuiltinMCPServer: %v", err)
+	}
+	key := addTestKey(t, keyCache, auth.RoleSystemAdmin, "org-builtin-url")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mcp-servers", nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "ai.waiin.com")
+
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: testTimeout})
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, raw)
+	}
+
+	list := decodeMCPServerList(t, resp.Body)
+	var builtin map[string]any
+	for _, item := range list {
+		if item["alias"] == "voidllm" {
+			builtin = item
+			break
+		}
+	}
+	if builtin == nil {
+		t.Fatal("list missing builtin voidllm server")
+	}
+	wantURL := "https://ai.waiin.com/api/v1/mcp/voidllm"
+	if builtin["url"] != wantURL {
+		t.Errorf("builtin url = %q, want %q", builtin["url"], wantURL)
+	}
+}
+
+func TestTestMCPServerConnection_Builtin(t *testing.T) {
+	t.Parallel()
+
+	dsn := "file:TestTestMCPServerConnection_Builtin?mode=memory&cache=private"
+	ctx := context.Background()
+	database, err := db.Open(ctx, config.DatabaseConfig{
+		Driver:          "sqlite",
+		DSN:             dsn,
+		MaxOpenConns:    1,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("open test DB: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	if err := db.RunMigrations(ctx, database.SQL(), db.SQLiteDialect{}, slog.Default()); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	builtin, err := database.EnsureBuiltinMCPServer(ctx)
+	if err != nil {
+		t.Fatalf("EnsureBuiltinMCPServer: %v", err)
+	}
+
+	keyCache := cache.New[string, auth.KeyInfo]()
+	mcpServer := mcp.NewServer("voidllm", "test")
+	mcpServer.RegisterTool(mcp.Tool{Name: "ping"}, func(context.Context, jsonx.RawMessage) (*mcp.ToolResult, error) {
+		return mcp.TextResult("pong"), nil
+	})
+
+	handler := &admin.Handler{
+		DB:            database,
+		HMACSecret:    testHMACSecret,
+		EncryptionKey: testEncryptionKey,
+		KeyCache:      keyCache,
+		License:       license.NewHolder(license.Verify("", true)),
+		Log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MCPServer:     mcpServer,
+	}
+
+	app := fiber.New()
+	admin.RegisterRoutes(app, handler, keyCache, testHMACSecret, nil)
+	key := addTestKey(t, keyCache, auth.RoleSystemAdmin, "org-test-builtin")
+
+	resp := mcpServerRequest(t, app, http.MethodPost,
+		"/api/v1/mcp-servers/"+builtin.ID+"/test", key, nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, raw)
+	}
+
+	var got map[string]any
+	decodeBody(t, resp.Body, &got)
+	if got["success"] != true {
+		t.Errorf("success = %v, want true", got["success"])
+	}
+	if got["tools"].(float64) != 1 {
+		t.Errorf("tools = %v, want 1", got["tools"])
 	}
 }
 

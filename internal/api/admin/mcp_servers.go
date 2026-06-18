@@ -162,22 +162,80 @@ func validateMCPServerURL(rawURL string, allowPrivate bool) error {
 // mcpTestTimeout is the per-request deadline used by TestMCPServerConnection.
 const mcpTestTimeout = 30 * time.Second
 
+// firstForwardedToken returns the first value when s is a comma-separated list
+// of proxy-forwarded values (e.g. "https, http" from multiple proxies).
+func firstForwardedToken(s string) string {
+	if idx := strings.Index(s, ","); idx >= 0 {
+		return strings.TrimSpace(s[:idx])
+	}
+	return strings.TrimSpace(s)
+}
+
+// publicBaseURLFromRequest derives the public origin (scheme + host) for the
+// current HTTP request. It prefers X-Forwarded-* headers set by reverse proxies
+// and falls back to the Host header.
+func publicBaseURLFromRequest(c fiber.Ctx) string {
+	scheme := firstForwardedToken(c.Get("X-Forwarded-Proto"))
+	if scheme == "" {
+		scheme = firstForwardedToken(c.Get("X-Forwarded-Scheme"))
+	}
+	if scheme == "" {
+		if c.Get("X-Forwarded-Ssl") == "on" || c.Get("Front-End-Https") == "on" {
+			scheme = "https"
+		}
+	}
+
+	host := firstForwardedToken(c.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = c.Get("Host")
+	}
+
+	if scheme == "" && host != "" {
+		if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+			scheme = "http"
+		} else {
+			scheme = "https"
+		}
+	}
+	if scheme == "" || host == "" {
+		return ""
+	}
+	return scheme + "://" + host
+}
+
+// builtinMCPProxyURL returns the VoidLLM-proxied MCP endpoint URL for a
+// built-in server alias (e.g. /api/v1/mcp/voidllm).
+func builtinMCPProxyURL(publicBase, alias string) string {
+	if publicBase == "" || alias == "" {
+		return ""
+	}
+	return strings.TrimRight(publicBase, "/") + "/api/v1/mcp/" + alias
+}
+
 // mcpServerToResponse converts a db.MCPServer to its API wire representation.
 // The scope field is derived from the OrgID and TeamID fields: a server with
 // a non-nil TeamID has scope "team", non-nil OrgID has scope "org", and
 // both nil yields scope "global".
-func mcpServerToResponse(s *db.MCPServer) mcpServerResponse {
+// Built-in servers have no upstream URL in the database; when publicBaseURL is
+// non-empty their proxy URL is synthesized for display and client configuration.
+func mcpServerToResponse(s *db.MCPServer, publicBaseURL string) mcpServerResponse {
 	scope := "global"
 	if s.TeamID != nil {
 		scope = "team"
 	} else if s.OrgID != nil {
 		scope = "org"
 	}
+	serverURL := s.URL
+	if s.Source == "builtin" {
+		if proxyURL := builtinMCPProxyURL(publicBaseURL, s.Alias); proxyURL != "" {
+			serverURL = proxyURL
+		}
+	}
 	return mcpServerResponse{
 		ID:              s.ID,
 		Name:            s.Name,
 		Alias:           s.Alias,
-		URL:             s.URL,
+		URL:             serverURL,
 		AuthType:        s.AuthType,
 		AuthHeader:      s.AuthHeader,
 		IsActive:        s.IsActive,
@@ -471,7 +529,7 @@ func (h *Handler) CreateMCPServer(c fiber.Ctx) error {
 		}()
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s))
+	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s, publicBaseURLFromRequest(c)))
 }
 
 // CreateOrgMCPServer handles POST /api/v1/orgs/:org_id/mcp-servers.
@@ -545,7 +603,7 @@ func (h *Handler) CreateOrgMCPServer(c fiber.Ctx) error {
 		}()
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s))
+	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s, publicBaseURLFromRequest(c)))
 }
 
 // CreateTeamMCPServer handles POST /api/v1/orgs/:org_id/teams/:team_id/mcp-servers.
@@ -622,7 +680,7 @@ func (h *Handler) CreateTeamMCPServer(c fiber.Ctx) error {
 		}()
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s))
+	return c.Status(fiber.StatusCreated).JSON(mcpServerToResponse(s, publicBaseURLFromRequest(c)))
 }
 
 // ListMCPServers handles GET /api/v1/mcp-servers.
@@ -650,7 +708,7 @@ func (h *Handler) ListMCPServers(c fiber.Ctx) error {
 
 	resp := make([]mcpServerResponse, len(servers))
 	for i := range servers {
-		resp[i] = mcpServerToResponse(&servers[i])
+		resp[i] = mcpServerToResponse(&servers[i], publicBaseURLFromRequest(c))
 	}
 	return c.JSON(resp)
 }
@@ -685,7 +743,7 @@ func (h *Handler) ListOrgMCPServers(c fiber.Ctx) error {
 
 	resp := make([]mcpServerResponse, len(servers))
 	for i := range servers {
-		resp[i] = mcpServerToResponse(&servers[i])
+		resp[i] = mcpServerToResponse(&servers[i], publicBaseURLFromRequest(c))
 	}
 	return c.JSON(resp)
 }
@@ -727,7 +785,7 @@ func (h *Handler) ListTeamMCPServers(c fiber.Ctx) error {
 
 	resp := make([]mcpServerResponse, len(servers))
 	for i := range servers {
-		resp[i] = mcpServerToResponse(&servers[i])
+		resp[i] = mcpServerToResponse(&servers[i], publicBaseURLFromRequest(c))
 	}
 	return c.JSON(resp)
 }
@@ -765,7 +823,7 @@ func (h *Handler) GetMCPServer(c fiber.Ctx) error {
 		return permErr
 	}
 
-	return c.JSON(mcpServerToResponse(s))
+	return c.JSON(mcpServerToResponse(s, publicBaseURLFromRequest(c)))
 }
 
 // UpdateMCPServer handles PATCH /api/v1/mcp-servers/:server_id.
@@ -900,7 +958,7 @@ func (h *Handler) UpdateMCPServer(c fiber.Ctx) error {
 
 	h.refreshMCPCaches(ctx)
 
-	return c.JSON(mcpServerToResponse(s))
+	return c.JSON(mcpServerToResponse(s, publicBaseURLFromRequest(c)))
 }
 
 // DeleteMCPServer handles DELETE /api/v1/mcp-servers/:server_id.
@@ -1038,7 +1096,7 @@ func (h *Handler) setMCPServerActive(c fiber.Ctx, active bool) error {
 
 	h.refreshMCPCaches(ctx)
 
-	return c.JSON(mcpServerToResponse(updated))
+	return c.JSON(mcpServerToResponse(updated, publicBaseURLFromRequest(c)))
 }
 
 // addMCPBlocklistRequest is the JSON body accepted by AddMCPServerBlocklist.
@@ -1404,6 +1462,27 @@ func (h *Handler) TestMCPServerConnection(c fiber.Ctx) error {
 	ki := auth.KeyInfoFromCtx(c)
 	if permErr := checkMCPServerScopePermission(c, s, ki); permErr != nil {
 		return permErr
+	}
+
+	// Built-in servers (e.g. alias "voidllm") are served in-process and have no
+	// upstream HTTP URL. Report tool count from the local MCP server instead.
+	if s.Source == "builtin" {
+		if h.MCPServer == nil {
+			return c.JSON(testMCPServerResponse{
+				Success: false,
+				Error:   "built-in MCP server is not available",
+			})
+		}
+		return c.JSON(testMCPServerResponse{
+			Success: true,
+			Tools:   len(h.MCPServer.Tools()),
+		})
+	}
+	if strings.TrimSpace(s.URL) == "" {
+		return c.JSON(testMCPServerResponse{
+			Success: false,
+			Error:   "MCP server URL is not configured",
+		})
 	}
 
 	// Build a transport using the same helper as the proxy path — handles both

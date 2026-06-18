@@ -9,16 +9,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/voidmind-io/voidllm/internal/auth"
 	"github.com/voidmind-io/voidllm/internal/mcp"
+	"github.com/voidmind-io/voidllm/internal/metrics"
 )
 
 // HandleMCP processes MCP JSON-RPC 2.0 requests over HTTP POST /api/v1/mcp/voidllm.
 func (h *Handler) HandleMCP(c fiber.Ctx) error {
-	return h.handleMCPRequest(c, h.MCPServer)
+	return h.handleMCPRequest(c, h.MCPServer, "voidllm", false)
 }
 
 // HandleCodeModeMCP processes MCP JSON-RPC 2.0 requests over HTTP POST /api/v1/mcp.
 func (h *Handler) HandleCodeModeMCP(c fiber.Ctx) error {
-	return h.handleMCPRequest(c, h.CodeModeServer)
+	return h.handleMCPRequest(c, h.CodeModeServer, "code-mode", true)
 }
 
 // handleMCPRequest is the shared implementation for MCP POST handlers. It
@@ -28,11 +29,14 @@ func (h *Handler) HandleCodeModeMCP(c fiber.Ctx) error {
 //
 // When the request carries Accept: text/event-stream, the JSON-RPC response is
 // wrapped as a Server-Sent Events message per the MCP Streamable HTTP spec.
-func (h *Handler) handleMCPRequest(c fiber.Ctx, server *mcp.Server) error {
+func (h *Handler) handleMCPRequest(c fiber.Ctx, server *mcp.Server, serverAlias string, codeMode bool) error {
 	body := append([]byte{}, c.Body()...)
 	if len(body) == 0 {
 		return c.JSON(mcp.NewErrorResponse(nil, mcp.CodeParseError, "empty request body"))
 	}
+
+	meta := parseMCPRequestMeta(body)
+	start := time.Now()
 
 	ki := auth.KeyInfoFromCtx(c)
 	ctx := c.Context()
@@ -47,6 +51,15 @@ func (h *Handler) handleMCPRequest(c fiber.Ctx, server *mcp.Server) error {
 	}
 
 	result := server.Handle(ctx, body)
+	durationMS := int(time.Since(start).Milliseconds())
+
+	status := "success"
+	if result != nil {
+		status = mcpResponseStatus(result)
+	}
+	metrics.MCPToolCallsTotal.WithLabelValues(serverAlias, meta.MetricsMethod(), status).Inc()
+	metrics.MCPToolCallDurationSeconds.WithLabelValues(serverAlias, meta.MetricsMethod()).Observe(time.Since(start).Seconds())
+	h.logMCPToolCallEvent(ki, serverAlias, meta.ToolName, durationMS, status, codeMode, "")
 
 	if result == nil {
 		return c.SendStatus(fiber.StatusAccepted)

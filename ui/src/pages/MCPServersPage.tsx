@@ -845,6 +845,14 @@ function getBaseUrl(): string {
   return origin
 }
 
+function getMCPServerDisplayUrl(server: Pick<MCPServerResponse, 'url' | 'source' | 'alias'>): string {
+  if (server.url) return server.url
+  if (server.source === 'builtin') {
+    return `${getBaseUrl()}/api/v1/mcp/${server.alias}`
+  }
+  return ''
+}
+
 function generateMCPConfig(alias: string, isCodeMode?: boolean): string {
   const base = getBaseUrl()
   if (isCodeMode) {
@@ -1168,14 +1176,17 @@ export default function MCPServersPage() {
     {
       key: 'url',
       header: 'URL',
-      render: (row) => (
-        <span
-          className="text-text-tertiary text-sm truncate max-w-[260px] block"
-          title={row.url}
-        >
-          {row.url}
-        </span>
-      ),
+      render: (row) => {
+        const displayUrl = getMCPServerDisplayUrl(row)
+        return (
+          <span
+            className="text-text-tertiary text-sm truncate max-w-[260px] block"
+            title={displayUrl || undefined}
+          >
+            {displayUrl || '—'}
+          </span>
+        )
+      },
     },
     {
       key: 'auth_type',
