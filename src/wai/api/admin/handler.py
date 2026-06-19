@@ -190,6 +190,7 @@ class Handler:
                 user_id=r.get("user_id") or "",
                 service_account_id=r.get("service_account_id") or "",
                 name=r.get("name") or "",
+                is_system_admin=bool(r.get("is_system_admin")),
                 daily_token_limit=int(r.get("daily_token_limit") or 0),
                 monthly_token_limit=int(r.get("monthly_token_limit") or 0),
                 requests_per_minute=int(r.get("requests_per_minute") or 0),

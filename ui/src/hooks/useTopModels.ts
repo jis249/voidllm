@@ -30,6 +30,7 @@ export function useTopModels(orgId: string, enabled = true) {
       )
     },
     enabled: !!orgId && enabled,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 }

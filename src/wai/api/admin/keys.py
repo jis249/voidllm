@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from wai.api.admin.common import (
     KEY_TYPE_SA,
+    KEY_TYPE_SESSION,
     KEY_TYPE_TEAM,
     KEY_TYPE_USER,
     KeyInfo,
@@ -115,11 +116,19 @@ class RotateAPIKeyResponse(BaseModel):
 
 
 def _require_org_access(key_info: KeyInfo, org_id: str) -> None:
-    if not has_role(key_info.role, ROLE_SYSTEM_ADMIN) and key_info.org_id != org_id:
+    if key_info.is_system_admin or has_role(key_info.role, ROLE_SYSTEM_ADMIN):
+        return
+    if key_info.org_id != org_id:
         raise forbidden()
 
 
+def _can_manage_all_keys(caller: KeyInfo) -> bool:
+    return has_role(caller.role, ROLE_ORG_ADMIN) or caller.is_system_admin
+
+
 def _key_visible(key: dict[str, Any], caller: KeyInfo) -> bool:
+    if _can_manage_all_keys(caller):
+        return True
     if has_role(caller.role, ROLE_TEAM_ADMIN):
         if caller.team_id and key.get("team_id") == caller.team_id:
             return True
@@ -127,6 +136,10 @@ def _key_visible(key: dict[str, Any], caller: KeyInfo) -> bool:
             return True
         return False
     return key.get("user_id") == caller.user_id
+
+
+def _can_manage_key(key: dict[str, Any], caller: KeyInfo) -> bool:
+    return _can_manage_all_keys(caller) or _key_visible(key, caller)
 
 
 def _key_resp(k: dict[str, Any]) -> APIKeyResponse:
@@ -166,7 +179,7 @@ async def create_api_key(
     if body.key_type not in VALID_KEY_TYPES:
         raise bad_request("key_type must be one of: user_key, team_key, sa_key")
     req = body.model_dump()
-    if not has_role(key_info.role, ROLE_ORG_ADMIN):
+    if not _can_manage_all_keys(key_info):
         if body.key_type != KEY_TYPE_USER:
             raise forbidden("you can only create user keys")
         req["user_id"] = key_info.user_id
@@ -205,12 +218,24 @@ async def create_api_key(
             "created_by": key_info.user_id,
         },
     )
-    if body.key_type == KEY_TYPE_TEAM:
-        cache_role = ROLE_TEAM_ADMIN
-    elif body.key_type == KEY_TYPE_SA:
-        cache_role = ROLE_TEAM_ADMIN if req.get("team_id") else ROLE_ORG_ADMIN
-    else:
-        cache_role = key_info.role
+    owner_admin = False
+    membership_role: str | None = None
+    target_user_id = req.get("user_id")
+    if body.key_type in (KEY_TYPE_USER, KEY_TYPE_SESSION) and target_user_id:
+        owner = await repo.get_user(h.db, target_user_id)
+        if owner:
+            owner_admin = owner["is_system_admin"]
+        try:
+            membership_role = await repo.get_user_org_role(h.db, target_user_id, org_id)
+        except repo.NotFoundError:
+            pass
+    role_ctx = {
+        "key_type": body.key_type,
+        "team_id": req.get("team_id"),
+        "is_system_admin": owner_admin,
+        "membership_role": membership_role,
+    }
+    cache_role = h._resolve_role(role_ctx)
     h.key_cache.set(
         key_hash,
         KeyInfo(
@@ -222,6 +247,7 @@ async def create_api_key(
             user_id=req.get("user_id") or "",
             service_account_id=req.get("service_account_id") or "",
             name=body.name,
+            is_system_admin=owner_admin,
         ),
     )
     return CreateAPIKeyResponse(
@@ -256,7 +282,7 @@ async def list_api_keys(
     _require_org_access(key_info, org_id)
     p = parse_pagination(limit, cursor)
     keys = await repo.list_api_keys(h.db, org_id, p.cursor, p.limit + 1, False)
-    if not has_role(key_info.role, ROLE_ORG_ADMIN):
+    if not _can_manage_all_keys(key_info):
         keys = [k for k in keys if _key_visible(k, key_info)]
     has_more = len(keys) > p.limit
     if has_more:
@@ -279,7 +305,7 @@ async def get_api_key(
     key = await repo.get_api_key(h.db, key_id)
     if not key or key["org_id"] != org_id:
         raise not_found("api key not found")
-    if not has_role(key_info.role, ROLE_ORG_ADMIN) and not _key_visible(key, key_info):
+    if not _can_manage_key(key, key_info):
         raise not_found("api key not found")
     return _key_resp(key)
 
@@ -296,7 +322,7 @@ async def update_api_key(
     existing = await repo.get_api_key(h.db, key_id)
     if not existing or existing["org_id"] != org_id:
         raise not_found("api key not found")
-    if not has_role(key_info.role, ROLE_ORG_ADMIN) and not _key_visible(existing, key_info):
+    if not _can_manage_key(existing, key_info):
         raise not_found("api key not found")
     fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     try:
@@ -319,10 +345,13 @@ async def delete_api_key(
     existing = await repo.get_api_key(h.db, key_id)
     if not existing or existing["org_id"] != org_id:
         raise not_found("api key not found")
-    if not has_role(key_info.role, ROLE_ORG_ADMIN) and not _key_visible(existing, key_info):
+    if not _can_manage_key(existing, key_info):
         raise not_found("api key not found")
     try:
         await repo.delete_api_key(h.db, key_id)
+        key_hash = existing.get("key_hash")
+        if key_hash:
+            h.key_cache.delete(key_hash)
     except repo.NotFoundError:
         raise not_found("api key not found")
     except Exception:
@@ -341,8 +370,11 @@ async def rotate_api_key(
     existing = await repo.get_api_key(h.db, key_id)
     if not existing or existing["org_id"] != org_id:
         raise not_found("api key not found")
-    if not has_role(key_info.role, ROLE_ORG_ADMIN) and not _key_visible(existing, key_info):
+    if not _can_manage_key(existing, key_info):
         raise not_found("api key not found")
+    if existing["key_type"] in (KEY_TYPE_SESSION,):
+        raise bad_request("session keys cannot be rotated")
+    old_hash = existing.get("key_hash")
     plaintext = generate_key(existing["key_type"])
     key_hash = hash_key(plaintext, h.hmac_secret)
     try:
@@ -355,6 +387,45 @@ async def rotate_api_key(
         raise not_found("api key not found")
     except Exception:
         raise internal_error("failed to rotate api key")
+    if old_hash:
+        h.key_cache.delete(old_hash)
+    owner_admin = False
+    membership_role: str | None = None
+    if existing.get("user_id"):
+        owner = await repo.get_user(h.db, existing["user_id"])
+        if owner:
+            owner_admin = owner["is_system_admin"]
+        try:
+            membership_role = await repo.get_user_org_role(h.db, existing["user_id"], org_id)
+        except repo.NotFoundError:
+            pass
+    role_ctx = {
+        **existing,
+        "is_system_admin": owner_admin,
+        "membership_role": membership_role,
+    }
+    cache_role = h._resolve_role(role_ctx)
+    expires_at = None
+    if key.get("expires_at"):
+        try:
+            expires_at = datetime.fromisoformat(key["expires_at"].replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    h.key_cache.set(
+        key_hash,
+        KeyInfo(
+            id=key["id"],
+            key_type=existing["key_type"],
+            role=cache_role,
+            org_id=org_id,
+            team_id=existing.get("team_id") or "",
+            user_id=existing.get("user_id") or "",
+            service_account_id=existing.get("service_account_id") or "",
+            name=key["name"],
+            is_system_admin=owner_admin,
+            expires_at=expires_at,
+        ),
+    )
     return RotateAPIKeyResponse(
         id=key["id"],
         key=plaintext,

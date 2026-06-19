@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -14,6 +15,7 @@ from wai.api.admin.common import KEY_INFO_CTX, KeyInfo, api_error
 from wai.proxy.access import AliasCache, ModelAccessCache
 from wai.proxy.providers import get_adapter
 from wai.proxy.registry import ERR_MODEL_NOT_FOUND, Model, Registry
+from wai.usage.event import UsageEvent, UsageInfo, extract_usage, observe_stream_usage_line
 
 ALLOWED_PATHS = {
     "chat/completions",
@@ -55,6 +57,7 @@ class ProxyHandler:
         *,
         access_cache: ModelAccessCache | None = None,
         alias_cache: AliasCache | None = None,
+        usage_logger: Any = None,
         log: logging.Logger | None = None,
         max_request_body: int = 20 * 1024 * 1024,
         max_response_body: int = 50 * 1024 * 1024,
@@ -63,6 +66,7 @@ class ProxyHandler:
         self.registry = registry
         self.access_cache = access_cache
         self.alias_cache = alias_cache
+        self.usage_logger = usage_logger
         self.log = log or logging.getLogger("wai.proxy")
         self.max_request_body = max_request_body
         self.max_response_body = max_response_body
@@ -76,6 +80,7 @@ class ProxyHandler:
         await self._client.aclose()
 
     async def handle(self, request: Request, path: str) -> Response:
+        started = time.perf_counter()
         body = await request.body()
         if len(body) > self.max_request_body:
             raise api_error(413, "payload_too_large", "request body too large")
@@ -91,6 +96,7 @@ class ProxyHandler:
             raise api_error(400, "bad_request", "model field is required")
 
         key_info: KeyInfo | None = getattr(request.state, KEY_INFO_CTX, None)
+        requested_model_name = model_name
         model = self._resolve_model(key_info, model_name)
 
         upstream_path = path.lstrip("/")
@@ -99,7 +105,7 @@ class ProxyHandler:
 
         adapter = get_adapter(model.provider)
         needs_model_replace = model_name != model.name
-        needs_stream_opts = stream and (adapter is None or model.provider == "azure")
+        needs_stream_opts = stream
         if needs_model_replace or needs_stream_opts:
             body = mutate_request_body(body, model.name, needs_stream_opts)
 
@@ -113,9 +119,21 @@ class ProxyHandler:
 
         headers = self._build_upstream_headers(request, model, adapter)
         method = request.method.upper()
+        request_id = getattr(request.state, "request_id", "") or ""
 
         if stream:
-            return await self._stream_response(method, upstream_url, headers, body, adapter)
+            return await self._stream_response(
+                method,
+                upstream_url,
+                headers,
+                body,
+                adapter,
+                key_info=key_info,
+                model=model,
+                requested_model_name=requested_model_name,
+                request_id=request_id,
+                started=started,
+            )
 
         resp = await self._client.request(method, upstream_url, content=body, headers=headers)
         content = resp.content
@@ -123,6 +141,26 @@ class ProxyHandler:
             raise api_error(502, "bad_gateway", "upstream response too large")
         if adapter is not None:
             content = adapter.transform_response(content)
+
+        if (
+            self.usage_logger is not None
+            and key_info is not None
+            and upstream_path in {"chat/completions", "completions", "embeddings"}
+            and 200 <= resp.status_code < 300
+        ):
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            usage = extract_usage(content)
+            self._log_usage(
+                key_info,
+                model,
+                usage,
+                duration_ms=duration_ms,
+                ttft_ms=duration_ms,
+                status_code=resp.status_code,
+                request_id=request_id,
+                requested_model_name=requested_model_name,
+            )
+
         return Response(
             content=content,
             status_code=resp.status_code,
@@ -172,19 +210,104 @@ class ProxyHandler:
         headers: dict[str, str],
         body: bytes,
         adapter: Any,
+        *,
+        key_info: KeyInfo | None,
+        model: Model,
+        requested_model_name: str,
+        request_id: str,
+        started: float,
     ) -> StreamingResponse:
+        usage = UsageInfo()
+        ttft_ms: int | None = None
+        status_code = 200
+        first_chunk = True
+
         async def event_generator():
+            nonlocal usage, ttft_ms, status_code, first_chunk
             async with self._client.stream(method, url, content=body, headers=headers) as resp:
+                status_code = resp.status_code
                 async for line in resp.aiter_lines():
                     chunk = (line + "\n").encode()
+                    if first_chunk and line.startswith("data: "):
+                        ttft_ms = int((time.perf_counter() - started) * 1000)
+                        first_chunk = False
                     if adapter is not None:
                         out = adapter.transform_stream_line(chunk)
                         if out is None:
                             continue
                         chunk = out
+                    usage = observe_stream_usage_line(chunk, usage)
                     yield chunk
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        async def wrapped_generator():
+            async for chunk in event_generator():
+                yield chunk
+            if (
+                self.usage_logger is not None
+                and key_info is not None
+                and 200 <= status_code < 300
+            ):
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                self._log_usage(
+                    key_info,
+                    model,
+                    usage,
+                    duration_ms=duration_ms,
+                    ttft_ms=ttft_ms if ttft_ms is not None else duration_ms,
+                    status_code=status_code,
+                    request_id=request_id,
+                    requested_model_name=requested_model_name,
+                )
+
+        return StreamingResponse(wrapped_generator(), media_type="text/event-stream")
+
+    def _log_usage(
+        self,
+        key_info: KeyInfo,
+        model: Model,
+        usage: UsageInfo,
+        *,
+        duration_ms: int,
+        ttft_ms: int,
+        status_code: int,
+        request_id: str,
+        requested_model_name: str,
+    ) -> None:
+        if self.usage_logger is None:
+            return
+
+        cost: float | None = None
+        if model.pricing.input_per_1m > 0 or model.pricing.output_per_1m > 0:
+            cost = (
+                usage.prompt_tokens / 1_000_000 * model.pricing.input_per_1m
+                + usage.completion_tokens / 1_000_000 * model.pricing.output_per_1m
+            )
+
+        tps: float | None = None
+        if duration_ms > 0 and usage.completion_tokens > 0:
+            tps = usage.completion_tokens / (duration_ms / 1000.0)
+
+        self.usage_logger.log(
+            UsageEvent(
+                key_id=key_info.id,
+                key_type=key_info.key_type,
+                org_id=key_info.org_id,
+                team_id=key_info.team_id,
+                user_id=key_info.user_id,
+                service_account_id=key_info.service_account_id,
+                model_name=model.name,
+                requested_model_name=requested_model_name,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                cost_estimate=cost,
+                request_duration_ms=duration_ms,
+                ttft_ms=ttft_ms,
+                tokens_per_second=tps,
+                status_code=status_code,
+                request_id=request_id,
+            )
+        )
 
     @staticmethod
     def _filter_response_headers(headers: httpx.Headers) -> dict[str, str]:

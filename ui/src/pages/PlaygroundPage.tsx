@@ -190,37 +190,28 @@ export default function PlaygroundPage() {
     refetchOnMount: 'always',
   })
 
-  // Derive available tabs from the model list
-  const availableTabs = useMemo(() => {
-    const models = modelsData?.models ?? []
-    return supportedTypes
-      .filter((type) => models.some((m) => m.type === type))
-      .map((type) => ({ key: type, label: typeLabels[type] || type }))
-  }, [modelsData])
+  // Always show Chat, Completion, and Embedding tabs; filter models per tab.
+  const playgroundTabs = useMemo(
+    () => supportedTypes.map((type) => ({ key: type, label: typeLabels[type] || type })),
+    [],
+  )
 
-  // Set default tab when tabs first become available
-  useEffect(() => {
-    if (availableTabs.length > 0) {
-      setActiveTab((prev) => (prev === '' ? availableTabs[0].key : prev))
-    }
-  }, [availableTabs])
+  const resolvedActiveTab = activeTab || playgroundTabs[0]?.key || ''
 
-  // Auto-select the first model of the active tab type
-  useEffect(() => {
-    if (!modelsData?.models || activeTab === '') return
-    const tabModels = modelsData.models.filter((m) => m.type === activeTab)
-    setModel((prev) => {
-      if (tabModels.some((m) => m.name === prev)) return prev
-      return tabModels[0]?.name ?? ''
-    })
-  }, [activeTab, modelsData])
+  const tabModels = useMemo(
+    () => (modelsData?.models ?? []).filter((m) => m.type === resolvedActiveTab),
+    [modelsData, resolvedActiveTab],
+  )
+
+  const resolvedModel = useMemo(() => {
+    if (model && tabModels.some((m) => m.name === model)) return model
+    return tabModels[0]?.name ?? ''
+  }, [tabModels, model])
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatHistory, loading])
-
-  const tabModels = (modelsData?.models ?? []).filter((m) => m.type === activeTab)
 
   const modelOptions: SelectOption[] = tabModels.map((m) => ({
     value: m.name,
@@ -234,7 +225,7 @@ export default function PlaygroundPage() {
 
   function handleClear() {
     setError(null)
-    if (activeTab === 'embedding') {
+    if (resolvedActiveTab === 'embedding') {
       setEmbedResult(null)
       setSimilarity(null)
       setEmbedInput('')
@@ -247,7 +238,7 @@ export default function PlaygroundPage() {
   }
 
   async function handleSend() {
-    if (!model || !message.trim() || loading) return
+    if (!resolvedModel || !message.trim() || loading) return
 
     // Cancel any previous in-flight request
     abortRef.current?.abort()
@@ -288,7 +279,7 @@ export default function PlaygroundPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          model,
+          model: resolvedModel,
           messages,
           stream: streaming,
           temperature,
@@ -439,7 +430,7 @@ export default function PlaygroundPage() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ model, input }),
+      body: JSON.stringify({ model: resolvedModel, input }),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => null)
@@ -451,7 +442,7 @@ export default function PlaygroundPage() {
   }
 
   async function handleEmbed() {
-    if (!model || !embedInput.trim() || embedLoading) return
+    if (!resolvedModel || !embedInput.trim() || embedLoading) return
     setEmbedLoading(true)
     setError(null)
     try {
@@ -466,7 +457,7 @@ export default function PlaygroundPage() {
   }
 
   async function handleCompare() {
-    if (!model || !simTextA.trim() || !simTextB.trim() || simLoading) return
+    if (!resolvedModel || !simTextA.trim() || !simTextB.trim() || simLoading) return
     setSimLoading(true)
     setError(null)
     try {
@@ -485,22 +476,20 @@ export default function PlaygroundPage() {
     }
   }
 
-  const canSend = !!model && !!message.trim() && !loading
-  const isEmbedding = activeTab === 'embedding'
+  const canSend = !!resolvedModel && !!message.trim() && !loading
+  const isEmbedding = resolvedActiveTab === 'embedding'
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 4rem)' }}>
       <div className="shrink-0 mb-4">
         <PageHeader title="Playground" description="Test models interactively" />
-        {availableTabs.length > 1 && (
-          <div className="mt-3">
-            <TabSwitcher
-              tabs={availableTabs}
-              activeKey={activeTab}
-              onChange={handleTabChange}
-            />
-          </div>
-        )}
+        <div className="mt-3">
+          <TabSwitcher
+            tabs={playgroundTabs}
+            activeKey={resolvedActiveTab}
+            onChange={handleTabChange}
+          />
+        </div>
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
@@ -541,7 +530,7 @@ export default function PlaygroundPage() {
               <ConfigLabel>Model</ConfigLabel>
               <Select
                 options={modelOptions}
-                value={model}
+                value={resolvedModel}
                 onChange={setModel}
                 placeholder={
                   modelsData
@@ -695,9 +684,9 @@ export default function PlaygroundPage() {
           {/* Top bar */}
           <div className="shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-border">
             <div className="flex items-center gap-3">
-              {model ? (
+              {resolvedModel ? (
                 <span className="px-2.5 py-1 rounded-full bg-accent/15 border border-accent/20 text-accent text-xs font-medium truncate max-w-[220px]">
-                  {model}
+                  {resolvedModel}
                 </span>
               ) : (
                 <span className="px-2.5 py-1 rounded-full bg-bg-tertiary border border-border text-text-tertiary text-xs">
@@ -953,7 +942,7 @@ export default function PlaygroundPage() {
                   variant="primary"
                   size="sm"
                   onClick={() => void handleEmbed()}
-                  disabled={!model || !embedInput.trim() || embedLoading}
+                  disabled={!resolvedModel || !embedInput.trim() || embedLoading}
                   loading={embedLoading}
                 >
                   Generate Embedding
@@ -998,7 +987,7 @@ export default function PlaygroundPage() {
                   variant="primary"
                   size="sm"
                   onClick={() => void handleCompare()}
-                  disabled={!model || !simTextA.trim() || !simTextB.trim() || simLoading}
+                  disabled={!resolvedModel || !simTextA.trim() || !simTextB.trim() || simLoading}
                   loading={simLoading}
                 >
                   Compare

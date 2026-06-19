@@ -106,6 +106,8 @@ async def create_user(
     if not body.is_system_admin and key_info.org_id:
         try:
             await repo.create_org_membership(h.db, key_info.org_id, user["id"], ROLE_MEMBER)
+        except repo.ConflictError:
+            pass
         except Exception:
             raise internal_error("failed to add user to organization")
     return _user_resp(user)

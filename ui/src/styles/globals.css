@@ -24,6 +24,10 @@
   /* Border */
   --color-border: rgba(255, 255, 255, 0.1);
 
+  /* Overlays */
+  --color-overlay: rgba(0, 0, 0, 0.6);
+  --color-dialog-panel: rgba(11, 23, 36, 0.92);
+
   /* Radius */
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -38,6 +42,35 @@
   --gradient-mid: #38bdf8;
   --gradient-end: #818cf8;
   --accent-glow: var(--color-accent-glow);
+  --body-background:
+    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.14), transparent 34rem),
+    radial-gradient(circle at 88% 8%, rgba(129, 140, 248, 0.12), transparent 30rem),
+    linear-gradient(180deg, #07111c 0%, var(--color-bg-primary) 48%, #040a12 100%);
+  --selection-bg: rgba(34, 211, 238, 0.28);
+  --shadow-sidebar: 12px 0 40px rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="light"] {
+  --color-bg-primary: #eef3f8;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #e2eaf2;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-accent: #0891b2;
+  --color-accent-glow: rgba(8, 145, 178, 0.28);
+  --color-border: rgba(15, 23, 42, 0.12);
+  --color-overlay: rgba(15, 23, 42, 0.35);
+  --color-dialog-panel: rgba(255, 255, 255, 0.96);
+  --gradient-start: #0891b2;
+  --gradient-mid: #0284c7;
+  --gradient-end: #6366f1;
+  --body-background:
+    radial-gradient(circle at 18% 0%, rgba(8, 145, 178, 0.08), transparent 34rem),
+    radial-gradient(circle at 88% 8%, rgba(99, 102, 241, 0.06), transparent 30rem),
+    linear-gradient(180deg, #f8fafc 0%, var(--color-bg-primary) 48%, #e8eef4 100%);
+  --selection-bg: rgba(8, 145, 178, 0.22);
+  --shadow-sidebar: 12px 0 32px rgba(15, 23, 42, 0.08);
 }
 
 @layer base {
@@ -49,17 +82,15 @@
 body {
   font-family: var(--font-sans);
   color: var(--color-text-primary);
-  background:
-    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.14), transparent 34rem),
-    radial-gradient(circle at 88% 8%, rgba(129, 140, 248, 0.12), transparent 30rem),
-    linear-gradient(180deg, #07111c 0%, var(--color-bg-primary) 48%, #040a12 100%);
+  background: var(--body-background);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 ::selection {
-  background: rgba(34, 211, 238, 0.28);
+  background: var(--selection-bg);
   color: var(--color-text-primary);
 }
 
@@ -68,4 +99,12 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.dialog-overlay {
+  background: var(--color-overlay);
+}
+
+.dialog-panel {
+  background: var(--color-dialog-panel);
 }

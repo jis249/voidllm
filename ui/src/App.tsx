@@ -37,6 +37,7 @@ import SystemUsersPage from './pages/SystemUsersPage'
 import MCPServersPage from './pages/MCPServersPage'
 import SystemUsagePage from './pages/SystemUsagePage'
 import { ToastProvider } from './hooks/useToast'
+import { ThemeProvider } from './hooks/useTheme'
 import { Shell } from './components/layout/Shell'
 import { PageHeader } from './components/ui/PageHeader'
 import { LOCAL_STORAGE_KEY } from './lib/constants'
@@ -70,8 +71,9 @@ function RequireAuth() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <BrowserRouter>
+      <ThemeProvider>
+        <ToastProvider>
+          <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<CallbackPage />} />
@@ -129,7 +131,8 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
-      </ToastProvider>
+        </ToastProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }

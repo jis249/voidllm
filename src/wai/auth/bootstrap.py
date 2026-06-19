@@ -110,6 +110,7 @@ async def bootstrap(
                 org_id=org_id,
                 user_id=user_id,
                 name="Bootstrap Admin Key",
+                is_system_admin=True,
             ),
         )
 

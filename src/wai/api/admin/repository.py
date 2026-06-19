@@ -143,6 +143,25 @@ async def get_org_by_slug(db: Database, slug: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+async def get_user_by_email(db: Database, email: str, *, include_deleted: bool = False) -> dict[str, Any] | None:
+    deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
+    row = await db.fetchone(
+        f"""SELECT id, email, display_name, auth_provider, is_system_admin,
+                   created_at, updated_at, deleted_at
+            FROM users WHERE email = ? {deleted_clause}""",
+        (email,),
+    )
+    if not row:
+        return None
+    d = dict(row)
+    d["is_system_admin"] = bool(d["is_system_admin"])
+    return d
+
+
+def _tombstone_email(email: str, user_id: str) -> str:
+    return f"{email}#deleted#{user_id}"
+
+
 async def create_user(
     db: Database,
     *,
@@ -153,6 +172,32 @@ async def create_user(
     is_system_admin: bool = False,
     external_id: str | None = None,
 ) -> dict[str, Any]:
+    existing = await get_user_by_email(db, email, include_deleted=True)
+    if existing:
+        if not existing.get("deleted_at"):
+            raise ConflictError("email already in use")
+        cur = await db.execute(
+            """UPDATE users SET email = ?, display_name = ?, password_hash = ?, auth_provider = ?,
+                                  external_id = ?, is_system_admin = ?, deleted_at = NULL,
+                                  updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (
+                email,
+                display_name,
+                password_hash,
+                auth_provider,
+                external_id,
+                1 if is_system_admin else 0,
+                existing["id"],
+            ),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            raise NotFoundError(existing["id"])
+        user = await get_user(db, existing["id"])
+        assert user is not None
+        return user
+
     uid = new_uuid()
     try:
         await db.execute(
@@ -257,9 +302,18 @@ async def update_user(db: Database, user_id: str, fields: dict[str, Any]) -> dic
 
 
 async def delete_user(db: Database, user_id: str) -> None:
-    cur = await db.execute(
-        "UPDATE users SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL",
+    row = await db.fetchone(
+        "SELECT email FROM users WHERE id = ? AND deleted_at IS NULL",
         (user_id,),
+    )
+    if not row:
+        raise NotFoundError(user_id)
+    await revoke_user_sessions(db, user_id)
+    cur = await db.execute(
+        """UPDATE users SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
+                           email = ?
+           WHERE id = ? AND deleted_at IS NULL""",
+        (_tombstone_email(row["email"], user_id), user_id),
     )
     await db.commit()
     if cur.rowcount == 0:
@@ -923,7 +977,7 @@ async def get_user_team_id(db: Database, org_id: str, user_id: str) -> str:
 async def get_hourly_usage_totals(
     db: Database, org_id: str, team_id: str, user_id: str, from_iso: str
 ) -> dict[str, Any]:
-    clauses = ["org_id = ?", "timestamp >= ?"]
+    clauses = ["org_id = ?", "bucket_hour >= ?"]
     params: list[Any] = [org_id, from_iso]
     if team_id:
         clauses.append("team_id = ?")
@@ -935,7 +989,7 @@ async def get_hourly_usage_totals(
     row = await db.fetchone(
         f"""SELECT COALESCE(SUM(request_count), 0) AS total_requests,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                   COALESCE(SUM(cost_estimate), 0) AS cost_estimate
+                   COALESCE(SUM(cost_sum), 0) AS cost_estimate
             FROM usage_hourly WHERE {where}""",
         tuple(params),
     )
@@ -947,10 +1001,14 @@ async def get_scoped_usage_aggregates(
     from_iso: str, to_iso: str, group_by: str,
 ) -> list[dict[str, Any]]:
     group_col = {
-        "model": "model_name", "team": "team_id", "key": "key_id",
-        "user": "user_id", "day": "date(timestamp)", "hour": "strftime('%Y-%m-%dT%H:00:00+00:00', timestamp)",
+        "model": "model_name",
+        "team": "team_id",
+        "key": "key_id",
+        "user": "user_id",
+        "day": "LEFT(created_at, 10)",
+        "hour": "LEFT(created_at, 13) || ':00:00+00:00'",
     }.get(group_by, "model_name")
-    clauses = ["org_id = ?", "timestamp >= ?", "timestamp < ?"]
+    clauses = ["org_id = ?", "created_at >= ?", "created_at < ?"]
     params: list[Any] = [org_id, from_iso, to_iso]
     if team_id:
         clauses.append("team_id = ?")
@@ -966,7 +1024,7 @@ async def get_scoped_usage_aggregates(
                    COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
                    COALESCE(SUM(cost_estimate), 0) AS cost_estimate,
-                   COALESCE(AVG(duration_ms), 0) AS avg_duration_ms
+                   COALESCE(AVG(request_duration_ms), 0) AS avg_duration_ms
             FROM usage_events WHERE {where}
             GROUP BY {group_col} ORDER BY group_key""",
         tuple(params),
@@ -975,10 +1033,13 @@ async def get_scoped_usage_aggregates(
 
 
 async def get_monthly_token_usage(db: Database, org_id: str) -> int:
+    start = datetime.now(timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0,
+    ).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     row = await db.fetchone(
         """SELECT COALESCE(SUM(total_tokens), 0) AS t FROM usage_events
-           WHERE org_id = ? AND timestamp >= datetime('now', 'start of month')""",
-        (org_id,),
+           WHERE org_id = ? AND created_at >= ?""",
+        (org_id, start),
     )
     return int(row["t"]) if row else 0
 

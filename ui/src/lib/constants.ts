@@ -1,4 +1,5 @@
 export const LOCAL_STORAGE_KEY = 'wai_session'
+export const THEME_STORAGE_KEY = 'wai_theme'
 
 /** Maps backend key_type values to their display prefixes. */
 export const KEY_PREFIXES: Record<string, string> = {

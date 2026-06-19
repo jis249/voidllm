@@ -103,6 +103,14 @@ def hint_key(plaintext: str) -> str:
     return plaintext[:6] + "..." + plaintext[-4:]
 
 
+def user_key_name(display_name: str) -> str:
+    """Default API key label derived from a user's display name."""
+    name = display_name.strip()
+    if not name:
+        return "User_Key"
+    return f"{name}_Key"
+
+
 def validate_prefix(key: str) -> str:
     for prefix, ktype in _PREFIX_MAP.items():
         if key.startswith(prefix):
@@ -193,6 +201,7 @@ class KeyInfo:
     user_id: str = ""
     service_account_id: str = ""
     name: str = ""
+    is_system_admin: bool = False
     daily_token_limit: int = 0
     monthly_token_limit: int = 0
     requests_per_minute: int = 0

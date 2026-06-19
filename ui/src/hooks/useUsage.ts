@@ -34,7 +34,8 @@ export function useUsage(
         `/orgs/${orgId}/usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
       ),
     enabled: enabled && !!orgId && !!from && !!to,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 }
 
@@ -46,7 +47,8 @@ export function useMyUsage(from: string, to: string, groupBy: string, enabled = 
         `/usage/me?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&group_by=${encodeURIComponent(groupBy)}`,
       ),
     enabled: enabled && !!from && !!to,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 }
 

@@ -27,6 +27,24 @@ def _row_from_record(record: Any) -> Row:
     return Row(dict(record))
 
 
+class ExecuteResult:
+    """asyncpg execute status with a SQLite-compatible rowcount."""
+
+    __slots__ = ("status", "rowcount")
+
+    def __init__(self, status: str) -> None:
+        self.status = status
+        self.rowcount = self._parse_rowcount(status)
+
+    @staticmethod
+    def _parse_rowcount(status: str) -> int:
+        # asyncpg returns e.g. "UPDATE 1", "DELETE 0", "INSERT 0 1"
+        parts = status.split()
+        if parts and parts[-1].isdigit():
+            return int(parts[-1])
+        return 0
+
+
 class Database:
     """Async PostgreSQL wrapper."""
 
@@ -52,11 +70,12 @@ class Database:
     def _sql(self, sql: str) -> str:
         return adapt_sql(sql, self.driver)
 
-    async def execute(self, sql: str, params: tuple | list = ()) -> Any:
+    async def execute(self, sql: str, params: tuple | list = ()) -> ExecuteResult:
         sql = self._sql(sql)
         assert self._pg_pool is not None
         async with self._pg_pool.acquire() as conn:
-            return await conn.execute(sql, *params)
+            status = await conn.execute(sql, *params)
+            return ExecuteResult(status)
 
     async def executemany(self, sql: str, params: list[tuple]) -> Any:
         sql = self._sql(sql)
@@ -103,8 +122,9 @@ class _PgTransactionConn:
         self._conn = conn
         self._driver = driver
 
-    async def execute(self, sql: str, params: tuple | list = ()) -> Any:
-        return await self._conn.execute(adapt_sql(sql, self._driver), *params)
+    async def execute(self, sql: str, params: tuple | list = ()) -> ExecuteResult:
+        status = await self._conn.execute(adapt_sql(sql, self._driver), *params)
+        return ExecuteResult(status)
 
 
 _db: Database | None = None

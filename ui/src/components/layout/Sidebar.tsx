@@ -3,6 +3,7 @@ import { NavLink, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../../hooks/useMe'
 import { LOCAL_STORAGE_KEY } from '../../lib/constants'
+import { ThemeToggle } from '../ui/ThemeToggle'
 
 function formatRole(role?: string): string {
   if (!role) return '...'
@@ -259,10 +260,10 @@ export function Sidebar() {
   return (
     <aside
       aria-label="Main navigation"
-      className="w-[260px] bg-bg-secondary/95 border-r border-white/10 flex flex-col fixed h-screen z-50 shadow-[12px_0_40px_rgba(0,0,0,0.22)]"
+      className="w-[260px] bg-bg-secondary/95 border-r border-border flex flex-col fixed h-screen z-50 shadow-[var(--shadow-sidebar)]"
     >
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-white/5 shrink-0">
+      <div className="px-4 py-4 border-b border-border shrink-0">
         <a href="/" className="flex items-center gap-2 no-underline">
           <img src="/logo.svg" alt="wai" className="h-7 w-7" />
           <span className="gradient-text text-xl font-bold">wai</span>
@@ -274,7 +275,7 @@ export function Sidebar() {
         {visibleGroups.map((group, groupIndex) => (
             <div key={group.label || `group-${groupIndex}`}>
               {groupIndex > 0 && (
-                <div className="h-px bg-white/10 my-2" />
+                <div className="h-px bg-border my-2" />
               )}
               {group.label && (
                 <div className="text-[11px] uppercase tracking-wider text-text-tertiary/50 px-3 mb-1 mt-1">
@@ -316,8 +317,9 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="shrink-0 border-t border-white/5 p-3">
-        <div className="flex items-center justify-between mb-2">
+      <div className="shrink-0 border-t border-border p-3 space-y-3">
+        <ThemeToggle compact />
+        <div className="flex items-center justify-between">
           <Link
             to="/profile"
             className="text-xs text-text-secondary truncate max-w-[140px] hover:text-text-primary transition-colors no-underline"
@@ -330,7 +332,7 @@ export function Sidebar() {
         <div className="flex gap-2">
           <Link
             to="/profile"
-            className="flex-1 py-1.5 bg-transparent border border-white/10 rounded-md text-xs text-text-secondary cursor-pointer transition-colors duration-200 hover:border-accent/40 hover:text-text-primary text-center no-underline"
+            className="flex-1 py-1.5 bg-transparent border border-border rounded-md text-xs text-text-secondary cursor-pointer transition-colors duration-200 hover:border-accent/40 hover:text-text-primary text-center no-underline"
           >
             Profile
           </Link>
@@ -340,7 +342,7 @@ export function Sidebar() {
               queryClient.clear()
               window.location.href = '/login'
             }}
-            className="flex-1 py-1.5 bg-transparent border border-white/10 rounded-md text-xs text-text-secondary cursor-pointer transition-colors duration-200 hover:border-error hover:text-error"
+            className="flex-1 py-1.5 bg-transparent border border-border rounded-md text-xs text-text-secondary cursor-pointer transition-colors duration-200 hover:border-error hover:text-error"
           >
             Logout
           </button>

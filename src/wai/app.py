@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wai.api.admin import register_routes
-from wai.api.admin.handler import init_handler
+from wai.api.admin.handler import get_handler, init_handler
+from wai.api.admin.models import reload_admin_model_registry
 from wai.api.health.routes import register_health_routes
 from wai.auth.bootstrap import bootstrap, print_bootstrap_credentials
 from wai.config import load
@@ -22,6 +23,8 @@ from wai.config.models import Config as ConfigModel
 from wai.crypto.aes import parse_key
 from wai.db.connection import Database
 from wai.db.migrate import run_migrations
+from wai.health.model_checker import ModelHealthChecker
+from wai.usage.logger import UsageLogger
 from wai.middleware.request_id import RequestIDMiddleware
 from wai.proxy.auth import proxy_auth_middleware
 from wai.proxy.handler import ProxyHandler
@@ -63,6 +66,8 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
         "alias_cache": None,
         "proxy_handler": None,
         "bootstrap_result": None,
+        "health_checker": None,
+        "usage_logger": None,
         "routes_registered": False,
     }
 
@@ -81,6 +86,10 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
 
         async def reload_models() -> None:
             await load_db_into_registry(db, registry, enc_key, logger)
+            await reload_admin_model_registry(handler)
+            hc = state.get("health_checker")
+            if hc is not None:
+                await hc.probe_all()
 
         handler = init_handler(
             db,
@@ -89,6 +98,7 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
             fallback_max_depth=cfg.settings.fallback_max_depth,
         )
         await handler.seed_key_cache()
+        await reload_admin_model_registry(handler)
 
         state["bootstrap_result"] = await bootstrap(
             db,
@@ -104,10 +114,20 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
         state["alias_cache"] = await load_alias_cache(db)
         await handler.refresh_access_cache()
 
+        health_checker = ModelHealthChecker(db, enc_key, log=logger)
+        await health_checker.start()
+        handler.health_checker = health_checker
+        state["health_checker"] = health_checker
+
+        usage_logger = UsageLogger(db, cfg.settings.usage, log=logger)
+        await usage_logger.start()
+        state["usage_logger"] = usage_logger
+
         state["proxy_handler"] = ProxyHandler(
             registry,
             access_cache=state["access_cache"],
             alias_cache=state["alias_cache"],
+            usage_logger=usage_logger,
             log=logger,
             max_request_body=cfg.server.proxy.max_request_body,
             max_response_body=cfg.server.proxy.max_response_body,
@@ -124,6 +144,12 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
 
         yield
 
+        hc = state.get("health_checker")
+        if hc is not None:
+            await hc.stop()
+        ul = state.get("usage_logger")
+        if ul is not None:
+            await ul.stop()
         if state["proxy_handler"]:
             await state["proxy_handler"].close()
         await db.close()
@@ -160,6 +186,7 @@ def create_app(config: ConfigModel | None = None, config_path: str = "") -> Fast
                     registry,
                     access_cache=state["access_cache"],
                     alias_cache=state["alias_cache"],
+                    usage_logger=state.get("usage_logger"),
                 )
             return await ph.handle(request, path)
 

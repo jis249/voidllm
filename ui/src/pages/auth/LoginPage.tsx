@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Banner } from '../../components/ui/Banner'
+import { ThemeToggle } from '../../components/ui/ThemeToggle'
 import { LOCAL_STORAGE_KEY } from '../../lib/constants'
 import type { MeResponse } from '../../hooks/useMe'
 
@@ -80,8 +81,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-primary px-4">
-      <div className="w-full max-w-sm bg-bg-secondary border border-white/5 rounded-xl p-8">
+    <div className="min-h-screen flex items-center justify-center bg-bg-primary px-4 relative">
+      <div className="absolute top-4 right-4 w-44">
+        <ThemeToggle compact />
+      </div>
+      <div className="w-full max-w-sm bg-bg-secondary border border-border rounded-xl p-8">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold gradient-text">wai</h1>
           <p className="mt-2 text-sm text-text-tertiary">Sign in to your workspace</p>
@@ -122,9 +126,9 @@ export default function LoginPage() {
         {providers?.oidc === true && (
           <>
             <div className="my-6 flex items-center gap-3">
-              <div className="flex-1 h-px bg-white/10" />
+              <div className="flex-1 h-px bg-border" />
               <span className="text-xs text-text-tertiary">or</span>
-              <div className="flex-1 h-px bg-white/10" />
+              <div className="flex-1 h-px bg-border" />
             </div>
 
             <a href="/api/v1/auth/oidc/login" className="block w-full">

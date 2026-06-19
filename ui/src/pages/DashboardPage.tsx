@@ -351,9 +351,27 @@ export default function DashboardPage() {
     !!me && canViewOrgUsage,
   )
 
-  const scope = stats?.scope ?? 'user'
+  const scope = stats?.scope ?? (canViewOrgUsage ? 'org' : 'user')
   const description = scopeDescriptions[scope] ?? 'Your wai usage overview'
-  const isOrgScope = scope === 'org'
+
+  const healthCounts = useMemo(() => {
+    const fromStats = (stats?.models_healthy ?? 0) + (stats?.models_degraded ?? 0) + (stats?.models_unhealthy ?? 0)
+    if (fromStats > 0) {
+      return {
+        healthy: stats?.models_healthy ?? 0,
+        degraded: stats?.models_degraded ?? 0,
+        unhealthy: stats?.models_unhealthy ?? 0,
+      }
+    }
+    const models = modelHealth?.models ?? []
+    return {
+      healthy: models.filter((m) => m.status === 'healthy').length,
+      degraded: models.filter((m) => m.status === 'degraded').length,
+      unhealthy: models.filter((m) => m.status === 'unhealthy').length,
+    }
+  }, [stats, modelHealth])
+
+  const showModelHealth = healthCounts.healthy + healthCounts.degraded + healthCounts.unhealthy > 0
 
   // Build area chart data from usage series
   const areaData = useMemo(() => {
@@ -390,7 +408,7 @@ export default function DashboardPage() {
   const teamBars = useMemo(() => {
     if (!teamUsage?.data) return []
     return teamUsage.data.slice(0, 6).map((t) => ({
-      label: t.group_key,
+      label: t.group_label || t.group_key,
       value: t.total_requests,
       detail: `${formatNumber(t.total_requests)} Req`,
     }))
@@ -450,9 +468,8 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Model Health summary — only shown when at least one model has health data */}
-        {!statsLoading &&
-          (stats?.models_healthy ?? 0) + (stats?.models_degraded ?? 0) + (stats?.models_unhealthy ?? 0) > 0 && (
+        {/* Model Health summary */}
+        {!statsLoading && showModelHealth && (
             <div>
               <h2 className="text-sm font-medium text-text-tertiary uppercase tracking-wider mb-3">
                 Model Health
@@ -460,19 +477,19 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <StatCard
                   label="Healthy"
-                  value={stats?.models_healthy ?? 0}
+                  value={healthCounts.healthy}
                   icon={<IconHeartPulse />}
                   iconColor="green"
                 />
                 <StatCard
                   label="Degraded"
-                  value={stats?.models_degraded ?? 0}
+                  value={healthCounts.degraded}
                   icon={<IconAlertTriangle />}
                   iconColor="yellow"
                 />
                 <StatCard
                   label="Unhealthy"
-                  value={stats?.models_unhealthy ?? 0}
+                  value={healthCounts.unhealthy}
                   icon={<IconXCircle />}
                   iconColor="red"
                 />
@@ -565,7 +582,7 @@ export default function DashboardPage() {
         )}
 
         {/* Team usage + model performance (admin only) */}
-        {canViewOrgUsage && isOrgScope && (
+        {canViewOrgUsage && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Usage by Team */}
             <div className="bg-bg-secondary rounded-xl border border-border p-6">

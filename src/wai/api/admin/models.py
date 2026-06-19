@@ -326,6 +326,13 @@ async def deactivate_model(
     return _model_resp(await _fetch_model(h, model_id))
 
 
+async def reload_admin_model_registry(h) -> None:
+    rows = await h.db.fetchall(
+        "SELECT name, model_type AS type FROM models WHERE deleted_at IS NULL AND is_active = 1"
+    )
+    h.registry.reload([dict(r) for r in rows])
+
+
 async def _list_all_models(h) -> list[dict[str, Any]]:
     rows = await h.db.fetchall(
         "SELECT name, model_type AS type FROM models WHERE deleted_at IS NULL AND is_active = 1"

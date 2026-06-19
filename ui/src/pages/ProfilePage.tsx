@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/Badge'
 import { useMe } from '../hooks/useMe'
 import { useUpdateProfile } from '../hooks/useProfile'
 import { useToast } from '../hooks/useToast'
+import { ThemeToggle } from '../components/ui/ThemeToggle'
 
 function formatRole(role?: string): string {
   if (!role) return ''
@@ -293,6 +294,14 @@ export default function ProfilePage() {
         </SectionCard>
 
         <EditProfileSection userId={me.id} initialDisplayName={me.display_name} />
+
+        <SectionCard title="Appearance">
+          <p className="text-sm text-text-secondary mb-4">
+            Choose light or dark mode. Your preference is saved on this device.
+          </p>
+          <ThemeToggle />
+        </SectionCard>
+
         <ChangePasswordSection userId={me.id} />
       </div>
     </>

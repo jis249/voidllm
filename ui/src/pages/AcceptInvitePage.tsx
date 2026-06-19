@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
+import { ThemeToggle } from '../components/ui/ThemeToggle'
 
 interface InvitePeek {
   email: string
@@ -16,7 +17,7 @@ export default function AcceptInvitePage() {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
 
-  const [pageState, setPageState] = useState<PageState>('loading')
+  const [pageState, setPageState] = useState<PageState>(() => (token ? 'loading' : 'invalid'))
   const [invite, setInvite] = useState<InvitePeek | null>(null)
 
   const [displayName, setDisplayName] = useState('')
@@ -30,10 +31,7 @@ export default function AcceptInvitePage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!token) {
-      setPageState('invalid')
-      return
-    }
+    if (!token) return
 
     fetch(`/api/v1/invites/peek?token=${encodeURIComponent(token)}`)
       .then((res) => {
@@ -122,8 +120,11 @@ export default function AcceptInvitePage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-primary px-4">
-      <div className="w-full max-w-sm bg-bg-secondary border border-white/5 rounded-xl p-8">
+    <div className="min-h-screen flex items-center justify-center bg-bg-primary px-4 relative">
+      <div className="absolute top-4 right-4 w-44">
+        <ThemeToggle compact />
+      </div>
+      <div className="w-full max-w-sm bg-bg-secondary border border-border rounded-xl p-8">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold gradient-text">wai</h1>
         </div>

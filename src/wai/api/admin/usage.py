@@ -69,6 +69,7 @@ def _points(aggs: list[dict]) -> list[UsageDataPoint]:
     return [
         UsageDataPoint(
             group_key=a.get("group_key") or "",
+            group_label=a.get("group_label") or "",
             total_requests=int(a.get("total_requests") or 0),
             prompt_tokens=int(a.get("prompt_tokens") or 0),
             completion_tokens=int(a.get("completion_tokens") or 0),
@@ -78,6 +79,27 @@ def _points(aggs: list[dict]) -> list[UsageDataPoint]:
         )
         for a in aggs
     ]
+
+
+async def _enrich_group_labels(db, org_id: str, group_by: str, aggs: list[dict]) -> list[dict]:
+    if not aggs:
+        return aggs
+    if group_by == "team":
+        rows = await db.fetchall(
+            "SELECT id, name FROM teams WHERE org_id = ? AND deleted_at IS NULL",
+            (org_id,),
+        )
+        names = {row["id"]: row["name"] for row in rows}
+        for agg in aggs:
+            agg["group_label"] = names.get(agg.get("group_key") or "", agg.get("group_key") or "")
+    elif group_by == "user":
+        rows = await db.fetchall(
+            "SELECT id, display_name, email FROM users WHERE deleted_at IS NULL",
+        )
+        names = {row["id"]: row["display_name"] or row["email"] for row in rows}
+        for agg in aggs:
+            agg["group_label"] = names.get(agg.get("group_key") or "", agg.get("group_key") or "")
+    return aggs
 
 
 @router.get("/usage/me", response_model=UsageResponse)
@@ -95,6 +117,7 @@ async def my_usage(
         h.db, key_info.org_id, key_info.team_id, key_info.user_id,
         from_dt.isoformat(), to_dt.isoformat(), group_by,
     )
+    aggs = await _enrich_group_labels(h.db, key_info.org_id, group_by, aggs)
     return UsageResponse(
         org_id=key_info.org_id,
         **{"from": from_dt.isoformat()},
@@ -146,6 +169,7 @@ async def get_org_usage(
     aggs = await repo.get_scoped_usage_aggregates(
         h.db, org_id, "", "", from_dt.isoformat(), to_dt.isoformat(), group_by,
     )
+    aggs = await _enrich_group_labels(h.db, org_id, group_by, aggs)
     return UsageResponse(
         org_id=org_id,
         **{"from": from_dt.isoformat()},

@@ -19,6 +19,7 @@ from wai.api.admin.common import (
     hint_key,
     internal_error,
     unauthorized,
+    user_key_name,
 )
 from wai.api.admin.handler import Handler, auth_middleware, get_handler
 from wai.api.admin import repository as repo
@@ -78,6 +79,9 @@ async def login(body: LoginRequest) -> LoginResponse:
         role, org_id = await repo.resolve_user_role(h.db, user_id)
     except repo.NotFoundError:
         raise unauthorized("user has no organization membership")
+    user = await repo.get_user(h.db, user_id)
+    assert user
+    session_key_name = user_key_name(user["display_name"])
     await repo.revoke_user_sessions(h.db, user_id)
     key = generate_key(KEY_TYPE_SESSION)
     key_hash = hash_key(key, h.hmac_secret)
@@ -90,7 +94,7 @@ async def login(body: LoginRequest) -> LoginResponse:
             "key_hash": key_hash,
             "key_hint": key_hint,
             "key_type": KEY_TYPE_SESSION,
-            "name": "Login session",
+            "name": session_key_name,
             "org_id": org_id,
             "user_id": user_id,
             "expires_at": expires_at_str,
@@ -105,12 +109,11 @@ async def login(body: LoginRequest) -> LoginResponse:
             role=role,
             org_id=org_id,
             user_id=user_id,
-            name="Login session",
+            name=session_key_name,
+            is_system_admin=user["is_system_admin"],
             expires_at=expires_at,
         ),
     )
-    user = await repo.get_user(h.db, user_id)
-    assert user
     return LoginResponse(
         token=key,
         expires_at=expires_at_str,
@@ -212,6 +215,7 @@ async def oidc_callback(request: Request, code: str = "", state: str = "") -> Re
         )
         await repo.create_org_membership(h.db, orgs[0]["id"], user["id"], h.sso_config.default_role or "member")
     session_role, session_org_id = await repo.resolve_user_role(h.db, user["id"])
+    session_key_name = user_key_name(user["display_name"])
     await repo.revoke_user_sessions(h.db, user["id"])
     key = generate_key(KEY_TYPE_SESSION)
     key_hash = hash_key(key, h.hmac_secret)
@@ -221,7 +225,7 @@ async def oidc_callback(request: Request, code: str = "", state: str = "") -> Re
         h.db,
         {
             "key_hash": key_hash, "key_hint": hint_key(key), "key_type": KEY_TYPE_SESSION,
-            "name": "SSO session", "org_id": session_org_id, "user_id": user["id"],
+            "name": session_key_name, "org_id": session_org_id, "user_id": user["id"],
             "expires_at": expires_at_str, "created_by": user["id"],
         },
     )
@@ -229,7 +233,9 @@ async def oidc_callback(request: Request, code: str = "", state: str = "") -> Re
         key_hash,
         KeyInfo(
             id=api_key["id"], key_type=KEY_TYPE_SESSION, role=session_role,
-            org_id=session_org_id, user_id=user["id"], name="SSO session", expires_at=expires_at,
+            org_id=session_org_id, user_id=user["id"], name=session_key_name,
+            is_system_admin=user["is_system_admin"],
+            expires_at=expires_at,
         ),
     )
     response.set_cookie(

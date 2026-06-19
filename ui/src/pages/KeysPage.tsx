@@ -833,6 +833,11 @@ export default function KeysPage() {
 
   const allKeys = useMemo(() => keys?.data ?? [], [keys?.data])
 
+  const canManageAnyKey =
+    me?.is_system_admin === true ||
+    me?.role === 'system_admin' ||
+    me?.role === 'org_admin'
+
   const [totalKeys, activeKeys, expiringSoon] = useMemo(() => {
     // eslint-disable-next-line react-hooks/purity -- Date comparison is intentionally impure
     const now = Date.now()
@@ -893,34 +898,43 @@ export default function KeysPage() {
       header: '',
       align: 'right',
       render: (row) => {
-        if (row.key_type === 'session_key') return null
+        const isSessionKey = row.key_type === 'session_key'
+        const isOwnKey = row.user_id === me?.id
+        if (isSessionKey && !canManageAnyKey) return null
+        if (!isSessionKey && !canManageAnyKey && !isOwnKey) return null
+        const canEdit = isSessionKey ? canManageAnyKey : canManageAnyKey || isOwnKey
+        const canRotate = !isSessionKey && (canManageAnyKey || isOwnKey)
         return (
           <div className="flex items-center justify-end gap-0.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="!px-1.5"
-              title="Edit key"
-              onClick={() => setEditKey(row)}
-              disabled={deleteKey.isPending || rotateKey.isPending}
-            >
-              <IconPencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="!px-1.5"
-              title="Rotate key"
-              onClick={() => setRotateKeyId(row.id)}
-              disabled={deleteKey.isPending || rotateKey.isPending}
-            >
-              <IconRefresh className="h-4 w-4" />
-            </Button>
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="!px-1.5"
+                title={isSessionKey ? 'Edit session' : 'Edit key'}
+                onClick={() => setEditKey(row)}
+                disabled={deleteKey.isPending || rotateKey.isPending}
+              >
+                <IconPencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canRotate && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="!px-1.5"
+                title="Rotate key"
+                onClick={() => setRotateKeyId(row.id)}
+                disabled={deleteKey.isPending || rotateKey.isPending}
+              >
+                <IconRefresh className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
               className="!px-1.5 text-error hover:text-error"
-              title="Revoke key"
+              title={isSessionKey ? 'Revoke session' : 'Revoke key'}
               onClick={() => setRevokeKeyId(row.id)}
               disabled={deleteKey.isPending || rotateKey.isPending}
             >

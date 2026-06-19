@@ -93,7 +93,7 @@ export function Dialog({
 
   return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
       onMouseDown={handleBackdropMouseDown}
     >
       <div
@@ -101,8 +101,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="rounded-2xl shadow-2xl max-w-xl w-full mx-4 p-6 border-t border-accent/15 max-h-[90vh] flex flex-col"
-        style={{ background: 'rgba(25, 25, 31, 0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+        className="dialog-panel rounded-2xl shadow-2xl max-w-xl w-full mx-4 p-6 border border-border border-t-accent/15 max-h-[90vh] flex flex-col backdrop-blur-xl"
         onKeyDown={handlePanelKeyDown}
       >
         <div className="flex items-center justify-between mb-4">
