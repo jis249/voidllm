@@ -1,4 +1,4 @@
-"""WAI Admin API — FastAPI port of internal/api/admin."""
+"""WAI Admin API routes and handler wiring."""
 
 from wai.api.admin.handler import Handler, get_handler, init_handler
 from wai.api.admin.routes import API_PREFIX, create_admin_router, register_routes

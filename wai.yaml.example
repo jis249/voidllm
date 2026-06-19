@@ -32,3 +32,4 @@ models:
 settings:
   admin_key: ${WAI_ADMIN_KEY}
   encryption_key: ${WAI_ENCRYPTION_KEY}
+  license: ${WAI_LICENSE:-}

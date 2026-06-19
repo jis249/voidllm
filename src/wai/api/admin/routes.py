@@ -1,4 +1,4 @@
-"""Admin API route registration — mirrors internal/api/admin/routes.go."""
+"""Admin API route registration."""
 
 from __future__ import annotations
 

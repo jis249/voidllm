@@ -13,7 +13,7 @@ python -m venv .venv
 .\.venv\Scripts\pip install -e .
 
 # Configure secrets in .env.local (WAI_ADMIN_KEY, WAI_ENCRYPTION_KEY, POSTGRES_PASSWORD, provider keys)
-# Edit wai.yaml for models and server settings
+Copy-Item wai.yaml.example wai.yaml
 
 # Run backend + dev UI
 .\run-local.ps1
@@ -45,11 +45,27 @@ python -m wai --config wai.yaml
 ## Project layout
 
 ```
-src/wai/          Python backend
-ui/               React admin dashboard
-wai.yaml          Server configuration
-run-local.ps1     Local dev orchestration
-docker-compose.yml  Local PostgreSQL (+ optional Ollama)
+.
+├── pyproject.toml          # Python package metadata
+├── docker-compose.yml      # Local PostgreSQL (+ optional Ollama)
+├── wai.yaml.example        # Config template → copy to wai.yaml
+├── run-local.ps1           # Local dev orchestration
+├── scripts/
+│   ├── db/                 # Database helpers (migrate, ensure DB, reset admin)
+│   └── dev/                # Dev utilities (MCP test, Ollama GPU restart)
+├── src/wai/                # Python backend
+│   ├── api/                # Admin + health HTTP routes
+│   ├── auth/               # Bootstrap and auth helpers
+│   ├── config/             # YAML config loader
+│   ├── crypto/             # AES encryption for secrets at rest
+│   ├── db/                 # PostgreSQL connection + migrations
+│   ├── middleware/         # Request ID and HTTP middleware
+│   ├── proxy/              # OpenAI-compatible LLM proxy
+│   ├── app.py              # FastAPI application factory
+│   └── cli.py              # `wai` CLI entry point
+└── ui/                     # React admin dashboard
+    ├── public/             # Static assets
+    └── src/                # Pages, hooks, components
 ```
 
 ## Database
@@ -71,3 +87,9 @@ docker compose up -d postgres
 ```
 
 The script creates the `wai` database automatically if it does not exist.
+
+Run migrations manually:
+
+```powershell
+python scripts/db/migrate.py
+```

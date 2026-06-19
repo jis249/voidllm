@@ -262,7 +262,7 @@ if (-not $envValues.ContainsKey("POSTGRES_PASSWORD")) {
     throw "POSTGRES_PASSWORD is required for PostgreSQL."
 }
 
-& $VenvPython (Join-Path $Root "scripts\ensure_pg_db.py")
+& $VenvPython (Join-Path $Root "scripts\db\ensure_pg_db.py")
 if ($LASTEXITCODE -ne 0) { throw "Failed to ensure PostgreSQL database exists." }
 
 try {

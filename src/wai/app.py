@@ -32,7 +32,7 @@ logger = logging.getLogger("wai")
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
-    """Return Go-compatible {\"error\": {...}} bodies (UI expects error.message)."""
+    """Return JSON error bodies compatible with the admin UI (expects error.message)."""
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(_request: Request, exc: StarletteHTTPException):

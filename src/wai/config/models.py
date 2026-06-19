@@ -1,4 +1,4 @@
-"""Configuration dataclasses mirroring internal/config."""
+"""Configuration dataclasses loaded from wai.yaml."""
 
 from __future__ import annotations
 

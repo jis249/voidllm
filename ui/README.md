@@ -1,6 +1,23 @@
 # WAI UI
 
-The admin dashboard for WAI — a React single-page application served by the Python backend (or via Vite in development).
+React admin dashboard for WAI — served by the Python backend in production, or via Vite during development.
+
+## Layout
+
+```
+ui/
+├── public/          Static assets (logo, favicon)
+├── src/
+│   ├── api/         API client
+│   ├── components/  Layout shell + reusable UI
+│   ├── hooks/       React Query data hooks
+│   ├── lib/         Shared utilities
+│   ├── pages/       Route pages
+│   ├── styles/      Global CSS
+│   └── test/        Vitest setup
+├── index.html
+└── vite.config.ts
+```
 
 ## Development
 

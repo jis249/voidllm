@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wai"
-version = "0.1.0"
+dynamic = ["version"]
 description = "WAI — privacy-first LLM proxy and AI gateway"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,8 +25,11 @@ dependencies = [
 [project.scripts]
 wai = "wai.cli:main"
 
+[tool.setuptools.dynamic]
+version = { attr = "wai.__version__" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-wai = ["db/migrations/*.sql"]
+wai = ["py.typed", "db/migrations/*.sql"]
