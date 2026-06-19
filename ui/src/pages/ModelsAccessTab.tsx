@@ -32,6 +32,7 @@ function useSetOrgModelAccess(orgId: string) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['model-access', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['available-models'] })
     },
   })
 }

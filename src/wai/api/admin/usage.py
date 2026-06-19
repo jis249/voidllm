@@ -93,12 +93,16 @@ async def _enrich_group_labels(db, org_id: str, group_by: str, aggs: list[dict])
         for agg in aggs:
             agg["group_label"] = names.get(agg.get("group_key") or "", agg.get("group_key") or "")
     elif group_by == "user":
-        rows = await db.fetchall(
-            "SELECT id, display_name, email FROM users WHERE deleted_at IS NULL",
-        )
-        names = {row["id"]: row["display_name"] or row["email"] for row in rows}
-        for agg in aggs:
-            agg["group_label"] = names.get(agg.get("group_key") or "", agg.get("group_key") or "")
+        user_ids = [agg.get("group_key") for agg in aggs if agg.get("group_key")]
+        if user_ids:
+            placeholders = ",".join("?" * len(user_ids))
+            rows = await db.fetchall(
+                f"SELECT id, display_name, email FROM users WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                tuple(user_ids),
+            )
+            names = {row["id"]: row["display_name"] or row["email"] for row in rows}
+            for agg in aggs:
+                agg["group_label"] = names.get(agg.get("group_key") or "", agg.get("group_key") or "")
     return aggs
 
 

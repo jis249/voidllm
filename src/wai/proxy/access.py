@@ -16,7 +16,7 @@ def _to_set_map(in_map: dict[str, list[str] | None]) -> dict[str, set[str] | Non
 
 
 class ModelAccessCache:
-    """Org/team/key model allowlists — most-restrictive-wins (org → team → key)."""
+    """Org/team/key model allowlists — explicit allow with most-restrictive-wins."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -36,16 +36,18 @@ class ModelAccessCache:
             self._key = _to_set_map(key_access)
 
     def check(self, org_id: str, team_id: str, key_id: str, model_name: str) -> bool:
+        """Return True only when model is explicitly allowed at org level and passes team/key filters."""
         with self._lock:
-            if org_id in self._org and self._org[org_id]:
-                if model_name not in self._org[org_id]:
+            org_set = self._org.get(org_id)
+            if not org_set or model_name not in org_set:
+                return False
+            if team_id:
+                team_set = self._team.get(team_id)
+                if team_set and model_name not in team_set:
                     return False
-            if team_id and team_id in self._team and self._team[team_id]:
-                if model_name not in self._team[team_id]:
-                    return False
-            if key_id in self._key and self._key[key_id]:
-                if model_name not in self._key[key_id]:
-                    return False
+            key_set = self._key.get(key_id)
+            if key_set and model_name not in key_set:
+                return False
             return True
 
     def len(self) -> int:
@@ -87,8 +89,7 @@ class AliasCache:
             return n
 
 
-async def load_access_cache(db) -> ModelAccessCache:
-    cache = ModelAccessCache()
+async def reload_access_cache(db, cache: ModelAccessCache) -> None:
     org_rows = await db.fetchall("SELECT org_id, model_name FROM org_model_access")
     team_rows = await db.fetchall("SELECT team_id, model_name FROM team_model_access")
     key_rows = await db.fetchall("SELECT key_id, model_name FROM key_model_access")
@@ -102,6 +103,11 @@ async def load_access_cache(db) -> ModelAccessCache:
     for row in key_rows:
         key.setdefault(row["key_id"], []).append(row["model_name"])
     cache.load(org, team, key)
+
+
+async def load_access_cache(db) -> ModelAccessCache:
+    cache = ModelAccessCache()
+    await reload_access_cache(db, cache)
     return cache
 
 

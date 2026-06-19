@@ -1,21 +1,18 @@
 import { useEffect } from 'react'
 import { LOCAL_STORAGE_KEY } from '../../lib/constants'
 
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
-  return match ? decodeURIComponent(match[1]) : null
-}
-
 export default function CallbackPage() {
   useEffect(() => {
-    const token = getCookie('wai_oidc_token')
-    if (token) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, token)
-      document.cookie = 'wai_oidc_token=; path=/auth/callback; max-age=0'
-      window.location.href = '/'
-    } else {
-      window.location.href = '/login?error=sso_error'
-    }
+    fetch('/api/v1/auth/oidc/exchange', { method: 'POST', credentials: 'include' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('exchange failed')
+        const data = (await res.json()) as { token: string }
+        localStorage.setItem(LOCAL_STORAGE_KEY, data.token)
+        window.location.href = '/'
+      })
+      .catch(() => {
+        window.location.href = '/login?error=sso_error'
+      })
   }, [])
 
   return (

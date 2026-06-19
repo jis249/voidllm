@@ -117,6 +117,14 @@ class UsageConfig:
 
 
 @dataclass
+class RateLimitConfig:
+    login_max_attempts: int = 10
+    login_window_minutes: int = 15
+    invite_max_attempts: int = 5
+    invite_window_minutes: int = 15
+
+
+@dataclass
 class SettingsConfig:
     admin_key: str = ""
     encryption_key: str = ""
@@ -124,6 +132,7 @@ class SettingsConfig:
     license_file: str = ""
     bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
     usage: UsageConfig = field(default_factory=UsageConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     fallback_max_depth: int = 0
 
 

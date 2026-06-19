@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -21,8 +21,10 @@ from wai.api.admin.common import (
     unauthorized,
     user_key_name,
 )
-from wai.api.admin.handler import Handler, auth_middleware, get_handler
+from wai.audit.logger import AuditEvent
+from wai.api.admin.handler import auth_middleware, get_handler
 from wai.api.admin import repository as repo
+from wai.net.client_ip import client_ip
 
 router = APIRouter()
 
@@ -60,8 +62,11 @@ _DUMMY_HASH = bcrypt.hashpw(b"wa-dummy-timing-pad", bcrypt.gensalt())
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-async def login(body: LoginRequest) -> LoginResponse:
+async def login(body: LoginRequest, request: Request) -> LoginResponse:
     h = get_handler()
+    ip = client_ip(request)
+    if h.brute_force is not None:
+        await h.brute_force.check_allowed(ip, "login")
     if not body.email:
         raise bad_request("email is required")
     if not body.password:
@@ -70,10 +75,14 @@ async def login(body: LoginRequest) -> LoginResponse:
         user_id, pw_hash = await repo.get_user_password_hash(h.db, body.email)
     except repo.NotFoundError:
         bcrypt.checkpw(body.password.encode(), _DUMMY_HASH)
+        if h.brute_force is not None:
+            await h.brute_force.record_failure(ip, "login")
         raise unauthorized("invalid email or password")
     except Exception:
         raise internal_error("authentication failed")
     if not bcrypt.checkpw(body.password.encode(), pw_hash.encode()):
+        if h.brute_force is not None:
+            await h.brute_force.record_failure(ip, "login")
         raise unauthorized("invalid email or password")
     try:
         role, org_id = await repo.resolve_user_role(h.db, user_id)
@@ -114,6 +123,23 @@ async def login(body: LoginRequest) -> LoginResponse:
             expires_at=expires_at,
         ),
     )
+    if h.brute_force is not None:
+        await h.brute_force.clear(ip, "login")
+    if h.audit_logger is not None:
+        h.audit_logger.log(
+            AuditEvent(
+                request_id=getattr(request.state, "request_id", "") or "",
+                org_id=org_id,
+                actor_id=user_id,
+                actor_type="user",
+                action="auth.login",
+                resource_type="user",
+                resource_id=user_id,
+                description=f"login success email={body.email}",
+                ip_address=ip,
+                status_code=200,
+            )
+        )
     return LoginResponse(
         token=key,
         expires_at=expires_at_str,
@@ -239,6 +265,47 @@ async def oidc_callback(request: Request, code: str = "", state: str = "") -> Re
         ),
     )
     response.set_cookie(
-        "wai_oidc_token", key, max_age=10, httponly=False, samesite="strict", secure=secure, path="/auth/callback"
+        "wai_oidc_token", key, max_age=10, httponly=True, samesite="strict", secure=secure, path="/auth/callback"
     )
     return response
+
+
+@router.post("/auth/oidc/exchange", response_model=LoginResponse)
+async def oidc_exchange(request: Request, response: Response) -> LoginResponse:
+    """Exchange HttpOnly OIDC session cookie for a bearer token (one-time)."""
+    from wai.api.admin.common import validate_prefix
+
+    h = get_handler()
+    key = request.cookies.get("wai_oidc_token", "")
+    if not key:
+        raise unauthorized("SSO session expired")
+    try:
+        validate_prefix(key)
+    except ValueError as exc:
+        raise unauthorized("invalid session") from exc
+    kh = hash_key(key, h.hmac_secret)
+    info = h.key_cache.get(kh)
+    if info is None or info.key_type != KEY_TYPE_SESSION:
+        raise unauthorized("invalid session")
+    if info.expires_at and datetime.now(info.expires_at.tzinfo or None) > info.expires_at:
+        h.key_cache.delete(kh)
+        raise unauthorized("session expired")
+    if not info.user_id:
+        raise unauthorized("invalid session")
+    user = await repo.get_user(h.db, info.user_id)
+    if not user:
+        raise unauthorized("invalid session")
+    response.delete_cookie("wai_oidc_token", path="/auth/callback")
+    expires_at_str = info.expires_at.strftime("%Y-%m-%dT%H:%M:%S+00:00") if info.expires_at else ""
+    return LoginResponse(
+        token=key,
+        expires_at=expires_at_str,
+        user=MeResponse(
+            id=user["id"],
+            email=user["email"],
+            display_name=user["display_name"],
+            role=info.role,
+            org_id=info.org_id or None,
+            is_system_admin=user["is_system_admin"],
+        ),
+    )

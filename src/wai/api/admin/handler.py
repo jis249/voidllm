@@ -29,6 +29,7 @@ from wai.api.admin.common import (
 )
 from wai.api.admin import repository as repo
 from wai.db.connection import Database
+from wai.proxy.access import ModelAccessCache, reload_access_cache
 
 
 @dataclass
@@ -81,25 +82,8 @@ class ModelRegistry:
         self._models = {m["name"]: m for m in models}
 
 
-@dataclass
-class AccessCache:
-    org: dict[str, set[str]] = field(default_factory=dict)
-    team: dict[str, set[str]] = field(default_factory=dict)
-    key: dict[str, set[str]] = field(default_factory=dict)
-
-    def check(self, org_id: str, team_id: str, key_id: str, model: str) -> bool:
-        if key_id in self.key and self.key[key_id]:
-            return model in self.key[key_id]
-        if team_id and team_id in self.team and self.team[team_id]:
-            return model in self.team[team_id]
-        if org_id in self.org and self.org[org_id]:
-            return model in self.org[org_id]
-        return True
-
-    def load(self, org_a: dict, team_a: dict, key_a: dict) -> None:
-        self.org = org_a
-        self.team = team_a
-        self.key = key_a
+# Session keys are allowed on /v1/* so the admin Playground can use the login token.
+PROXY_KEY_TYPES = frozenset({KEY_TYPE_USER, KEY_TYPE_TEAM, KEY_TYPE_SA, KEY_TYPE_SESSION})
 
 
 class KeyCache:
@@ -132,8 +116,7 @@ class Handler:
         sso_provider: Any = None,
         license_holder: LicenseHolder | None = None,
         registry: ModelRegistry | None = None,
-        access_cache: AccessCache | None = None,
-        mcp_access_cache: AccessCache | None = None,
+        access_cache: ModelAccessCache | None = None,
         mcp_server_cache: Any = None,
         health_checker: Any = None,
         mcp_health_checker: Any = None,
@@ -141,6 +124,8 @@ class Handler:
         code_mode_server: Any = None,
         update_checker: Any = None,
         audit_logger: Any = None,
+        rate_limiter: Any = None,
+        brute_force: Any = None,
         reload_models: Callable[[], Awaitable[None]] | None = None,
         fallback_max_depth: int = 0,
         mcp_call_timeout: float = 30.0,
@@ -153,8 +138,7 @@ class Handler:
         self.key_cache = KeyCache()
         self.license = license_holder or LicenseHolder()
         self.registry = registry or ModelRegistry()
-        self.access_cache = access_cache or AccessCache()
-        self.mcp_access_cache = mcp_access_cache or AccessCache()
+        self.access_cache = access_cache or ModelAccessCache()
         self.mcp_server_cache = mcp_server_cache
         self.sso_config = sso_config or SSOConfig()
         self.sso_provider = sso_provider
@@ -164,6 +148,8 @@ class Handler:
         self.code_mode_server = code_mode_server
         self.update_checker = update_checker
         self.audit_logger = audit_logger
+        self.rate_limiter = rate_limiter
+        self.brute_force = brute_force
         self.reload_models = reload_models
         self.fallback_max_depth = fallback_max_depth
         self.mcp_call_timeout = mcp_call_timeout
@@ -223,21 +209,7 @@ class Handler:
         return ROLE_MEMBER
 
     async def refresh_access_cache(self) -> None:
-        if self.access_cache is None:
-            return
-        org_rows = await self.db.fetchall("SELECT org_id, model_name FROM org_model_access")
-        team_rows = await self.db.fetchall("SELECT team_id, model_name FROM team_model_access")
-        key_rows = await self.db.fetchall("SELECT key_id, model_name FROM key_model_access")
-        org_a: dict[str, set[str]] = {}
-        team_a: dict[str, set[str]] = {}
-        key_a: dict[str, set[str]] = {}
-        for row in org_rows:
-            org_a.setdefault(row["org_id"], set()).add(row["model_name"])
-        for row in team_rows:
-            team_a.setdefault(row["team_id"], set()).add(row["model_name"])
-        for row in key_rows:
-            key_a.setdefault(row["key_id"], set()).add(row["model_name"])
-        self.access_cache.load(org_a, team_a, key_a)
+        await reload_access_cache(self.db, self.access_cache)
 
 
 _handler: Handler | None = None
@@ -255,12 +227,10 @@ def get_handler() -> Handler:
     return _handler
 
 
-async def auth_middleware(request: Request) -> KeyInfo:
-    """Bearer token authentication — stores KeyInfo on request.state."""
+async def authenticate_bearer(request: Request, *, proxy: bool = False) -> KeyInfo:
+    """Validate Bearer token and return KeyInfo. Used by admin and proxy auth."""
     auth_header = request.headers.get("Authorization", "")
-    token = ""
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
+    token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
     if not token:
         raise unauthorized("missing authorization header")
     h = get_handler()
@@ -277,8 +247,15 @@ async def auth_middleware(request: Request) -> KeyInfo:
     if info.expires_at and datetime.now(info.expires_at.tzinfo or None) > info.expires_at:
         h.key_cache.delete(kh)
         raise unauthorized("invalid API key")
+    if proxy and info.key_type not in PROXY_KEY_TYPES:
+        raise unauthorized("invalid API key")
     request.state.__dict__[KEY_INFO_CTX] = info
     return info
+
+
+async def auth_middleware(request: Request) -> KeyInfo:
+    """Bearer token authentication — stores KeyInfo on request.state."""
+    return await authenticate_bearer(request)
 
 
 def require_role(required: str):
@@ -292,7 +269,9 @@ def require_role(required: str):
 
 
 async def optional_auth(request: Request) -> KeyInfo | None:
+    from fastapi import HTTPException
+
     try:
         return await auth_middleware(request)
-    except Exception:
+    except HTTPException:
         return None

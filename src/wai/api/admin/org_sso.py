@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 from urllib.parse import urlparse
 
@@ -22,6 +21,8 @@ from wai.api.admin.common import (
     not_found,
 )
 from wai.api.admin.handler import SSOConfig, get_handler, require_role
+from wai.crypto.aes import encrypt_string
+from wai.security.url import is_private_host
 
 router = APIRouter()
 
@@ -72,14 +73,6 @@ def _require_org_admin(key_info: KeyInfo, org_id: str) -> None:
         has_role(key_info.role, ROLE_ORG_ADMIN) and key_info.org_id == org_id
     ):
         raise forbidden()
-
-
-def _is_private_host(host: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(host)
-        return ip.is_private or ip.is_loopback or ip.is_link_local
-    except ValueError:
-        return host.lower() in ("localhost", "127.0.0.1", "::1")
 
 
 def _sso_resp(row) -> SSOConfigResponse:
@@ -135,12 +128,9 @@ async def upsert_org_sso_config(
     existing = await h.db.fetchone("SELECT * FROM org_sso_configs WHERE org_id = ?", (org_id,))
     secret_enc = existing["client_secret_enc"] if existing else ""
     if body.client_secret:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        aes = AESGCM(h.encryption_key[:32])
-        nonce = b"\x00" * 12
-        ct = aes.encrypt(nonce, body.client_secret.encode(), f"org_sso:{org_id}".encode())
-        secret_enc = (nonce + ct).hex()
+        secret_enc = encrypt_string(
+            body.client_secret, h.encryption_key[:32], f"org_sso:{org_id}".encode()
+        )
     if existing:
         await h.db.execute(
             """UPDATE org_sso_configs SET enabled=?, issuer=?, client_id=?, client_secret_enc=?,

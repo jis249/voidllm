@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -58,10 +59,15 @@ const DEFAULT_MAX_TOKENS = 4096
 
 const typeLabels: Record<string, string> = {
   chat: 'Chat',
-  completion: 'Completion',
   embedding: 'Embedding',
 }
-const supportedTypes = ['chat', 'completion', 'embedding']
+const supportedTypes = ['chat', 'embedding']
+
+function matchesPlaygroundTab(modelType: string, tab: string): boolean {
+  if (tab === 'chat') return modelType === 'chat' || modelType === 'completion'
+  if (tab === 'embedding') return modelType === 'embedding'
+  return modelType === tab
+}
 
 // ---------------------------------------------------------------------------
 // Simple markdown renderer: splits on ``` code fences, no external library
@@ -199,7 +205,7 @@ export default function PlaygroundPage() {
   const resolvedActiveTab = activeTab || playgroundTabs[0]?.key || ''
 
   const tabModels = useMemo(
-    () => (modelsData?.models ?? []).filter((m) => m.type === resolvedActiveTab),
+    () => (modelsData?.models ?? []).filter((m) => matchesPlaygroundTab(m.type, resolvedActiveTab)),
     [modelsData, resolvedActiveTab],
   )
 
@@ -289,10 +295,19 @@ export default function PlaygroundPage() {
       })
 
       if (res.status === 401) {
-        // Show error instead of logging out — the 401 may come from an
-        // upstream provider (no API key configured for the model), not
-        // from the proxy rejecting our session.
-        setError('Authentication failed. Check that the model has a valid upstream API key configured.')
+        const body = await res.json().catch(() => null)
+        const code =
+          body && typeof body === 'object' && body.error && typeof body.error === 'object'
+            ? (body.error as { code?: string }).code
+            : undefined
+        if (code === 'unauthorized') {
+          setError('Session expired or invalid. Log in again or paste a user/team API key below.')
+          return
+        }
+        setError(
+          parseProxyError(body, res.status, res.statusText) ||
+            'Upstream authentication failed. Check the model API key in Models settings.',
+        )
         return
       }
 
@@ -497,7 +512,7 @@ export default function PlaygroundPage() {
         {/* ================================================================
             LEFT PANEL — 32% — Configuration
         ================================================================ */}
-        <div className="w-[32%] shrink-0 flex flex-col rounded-xl border border-border bg-bg-secondary overflow-hidden">
+        <div className="w-[32%] shrink-0 flex flex-col rounded-xl border border-border bg-bg-secondary min-h-0">
           {/* Panel header */}
           <div className="shrink-0 flex items-center gap-2.5 px-5 py-4 border-b border-border">
             <svg
@@ -522,30 +537,38 @@ export default function PlaygroundPage() {
             <span className="text-sm font-medium text-text-primary">Configuration</span>
           </div>
 
+          {/* Model selector — outside scroll area so dropdown is not clipped */}
+          <div className="shrink-0 relative z-20 px-5 py-4 border-b border-border">
+            <ConfigLabel>Model</ConfigLabel>
+            <Select
+              options={modelOptions}
+              value={resolvedModel}
+              onChange={setModel}
+              placeholder={
+                modelsData
+                  ? modelOptions.length === 0
+                    ? 'No models available'
+                    : 'Select a model...'
+                  : 'Loading models...'
+              }
+              searchable={modelOptions.length > 8}
+              disabled={modelOptions.length === 0}
+              fullWidth
+            />
+            {modelsData && modelOptions.length === 0 && (
+              <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
+                No {typeLabels[resolvedActiveTab]?.toLowerCase() ?? resolvedActiveTab} models are
+                allowed for your org. An admin must grant access under{' '}
+                <Link to="/models" className="text-accent hover:underline">
+                  Models → Access
+                </Link>
+                .
+              </p>
+            )}
+          </div>
+
           {/* Scrollable config body */}
           <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-
-            {/* Model selector */}
-            <div>
-              <ConfigLabel>Model</ConfigLabel>
-              <Select
-                options={modelOptions}
-                value={resolvedModel}
-                onChange={setModel}
-                placeholder={
-                  modelsData
-                    ? modelOptions.length === 0
-                      ? 'No models available'
-                      : 'Select a model...'
-                    : 'Loading models...'
-                }
-                searchable={modelOptions.length > 8}
-                disabled={modelOptions.length === 0}
-                fullWidth
-              />
-            </div>
-
-            {/* Chat/completion-only controls */}
             {!isEmbedding && (
               <>
                 {/* Streaming toggle */}

@@ -25,6 +25,7 @@ from wai.config.models import (
     ProxyConfig,
     RedisConfig,
     ServerConfig,
+    RateLimitConfig,
     SettingsConfig,
     TLSConfig,
     UsageConfig,
@@ -192,6 +193,7 @@ def _from_dict(data: dict[str, Any]) -> Config:
     settings_raw = data.get("settings") or {}
     bootstrap_raw = settings_raw.get("bootstrap") or {}
     usage_raw = settings_raw.get("usage") or {}
+    rate_raw = settings_raw.get("rate_limit") or {}
     logging_raw = data.get("logging") or {}
 
     drop_on_full = usage_raw.get("drop_on_full")
@@ -257,6 +259,12 @@ def _from_dict(data: dict[str, Any]) -> Config:
                 flush_interval=_coerce_timedelta(usage_raw.get("flush_interval"), timedelta(seconds=5)),
                 drop_on_full=drop_full,
             ),
+            rate_limit=RateLimitConfig(
+                login_max_attempts=int(rate_raw.get("login_max_attempts") or 10),
+                login_window_minutes=int(rate_raw.get("login_window_minutes") or 15),
+                invite_max_attempts=int(rate_raw.get("invite_max_attempts") or 5),
+                invite_window_minutes=int(rate_raw.get("invite_window_minutes") or 15),
+            ),
             fallback_max_depth=int(settings_raw.get("fallback_max_depth") or 0),
         ),
         logging=LoggingConfig(
@@ -290,6 +298,11 @@ def _set_defaults(cfg: Config) -> None:
 
     if not cfg.redis.key_prefix:
         cfg.redis.key_prefix = "wai:"
+
+    if cfg.database.max_open_conns <= 0:
+        cfg.database.max_open_conns = 25
+    if cfg.database.max_idle_conns <= 0:
+        cfg.database.max_idle_conns = 5
 
     if cfg.settings.usage.buffer_size == 0:
         cfg.settings.usage.buffer_size = 1000

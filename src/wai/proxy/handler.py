@@ -74,6 +74,7 @@ class ProxyHandler:
         self._client = httpx.AsyncClient(
             follow_redirects=False,
             timeout=httpx.Timeout(600.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
         )
 
     async def close(self) -> None:

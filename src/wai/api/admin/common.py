@@ -164,6 +164,10 @@ def limit_reached(msg: str) -> HTTPException:
     return api_error(403, "limit_reached", msg)
 
 
+def rate_limited(msg: str = "too many requests") -> HTTPException:
+    return api_error(429, "rate_limited", msg)
+
+
 def gone(msg: str) -> HTTPException:
     return api_error(410, "gone", msg)
 

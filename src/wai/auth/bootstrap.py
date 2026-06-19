@@ -99,6 +99,12 @@ async def bootstrap(
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
             (key_id, key_hash, key_hint, KEY_TYPE_USER, "Bootstrap Admin Key", org_id, user_id, user_id),
         )
+        model_rows = await db.fetchall("SELECT name FROM models WHERE deleted_at IS NULL")
+        for model_row in model_rows:
+            await conn.execute(
+                "INSERT INTO org_model_access (id, org_id, model_name) VALUES (?, ?, ?)",
+                (new_uuid(), org_id, model_row["name"]),
+            )
 
     if key_cache is not None:
         key_cache.set(

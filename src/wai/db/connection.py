@@ -55,12 +55,14 @@ class Database:
         self.dsn = dsn or DEFAULT_PG_DSN
         self._pg_pool: Any = None
 
-    async def connect(self) -> None:
+    async def connect(self, *, min_size: int | None = None, max_size: int | None = None) -> None:
         try:
             import asyncpg
         except ImportError as exc:
             raise RuntimeError("PostgreSQL requires asyncpg — run: pip install asyncpg") from exc
-        self._pg_pool = await asyncpg.create_pool(self.dsn, min_size=1, max_size=10)
+        pool_min = 2 if min_size is None else min_size
+        pool_max = 25 if max_size is None else max_size
+        self._pg_pool = await asyncpg.create_pool(self.dsn, min_size=pool_min, max_size=pool_max)
 
     async def close(self) -> None:
         if self._pg_pool is not None:
@@ -125,6 +127,9 @@ class _PgTransactionConn:
     async def execute(self, sql: str, params: tuple | list = ()) -> ExecuteResult:
         status = await self._conn.execute(adapt_sql(sql, self._driver), *params)
         return ExecuteResult(status)
+
+    async def executemany(self, sql: str, params: list[tuple]) -> None:
+        await self._conn.executemany(adapt_sql(sql, self._driver), params)
 
 
 _db: Database | None = None

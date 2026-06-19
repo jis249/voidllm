@@ -14,6 +14,13 @@ from wai.usage.event import UsageEvent
 
 _MAX_MODEL_NAME_LEN = 256
 
+_USAGE_EVENT_SQL = """INSERT INTO usage_events (
+       id, request_id, key_id, key_type, org_id, team_id, user_id,
+       service_account_id, model_name, requested_model_name,
+       prompt_tokens, completion_tokens, total_tokens, cost_estimate,
+       request_duration_ms, ttft_ms, tokens_per_second, status_code
+   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
 
 def _truncate(value: str) -> str:
     if len(value) <= _MAX_MODEL_NAME_LEN:
@@ -121,14 +128,9 @@ class UsageLogger:
         rollups: dict[tuple[str, str, str], _Rollup] = {}
         try:
             async with self._db.transaction() as tx:
+                event_rows: list[tuple] = []
                 for ev in batch:
-                    await tx.execute(
-                        """INSERT INTO usage_events (
-                               id, request_id, key_id, key_type, org_id, team_id, user_id,
-                               service_account_id, model_name, requested_model_name,
-                               prompt_tokens, completion_tokens, total_tokens, cost_estimate,
-                               request_duration_ms, ttft_ms, tokens_per_second, status_code
-                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    event_rows.append(
                         (
                             new_uuid(),
                             ev.request_id,
@@ -148,7 +150,7 @@ class UsageLogger:
                             ev.ttft_ms,
                             ev.tokens_per_second,
                             ev.status_code,
-                        ),
+                        )
                     )
                     bucket = _bucket_hour()
                     key = (ev.key_id, ev.model_name, bucket)
@@ -172,6 +174,9 @@ class UsageLogger:
                     if ev.ttft_ms is not None:
                         rollup.ttft_sum_ms += ev.ttft_ms
                         rollup.ttft_count += 1
+
+                if event_rows:
+                    await tx.executemany(_USAGE_EVENT_SQL, event_rows)
 
                 for r in rollups.values():
                     await tx.execute(

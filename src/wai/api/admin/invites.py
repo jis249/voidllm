@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel
 
 from wai.api.admin.common import (
@@ -28,6 +28,7 @@ from wai.api.admin.common import (
 )
 from wai.api.admin.handler import get_handler, require_role
 from wai.api.admin import repository as repo
+from wai.net.client_ip import client_ip
 
 router = APIRouter()
 
@@ -228,8 +229,11 @@ async def peek_invite(token: str = Query(...)) -> PeekInviteResponse:
 
 
 @router.post("/invites/redeem", response_model=RedeemInviteResponse, status_code=status.HTTP_201_CREATED)
-async def redeem_invite(body: RedeemInviteRequest) -> RedeemInviteResponse:
+async def redeem_invite(body: RedeemInviteRequest, request: Request) -> RedeemInviteResponse:
     h = get_handler()
+    ip = client_ip(request)
+    if h.brute_force is not None:
+        await h.brute_force.check_allowed(ip, "invite_redeem")
     if not body.token:
         raise bad_request("token is required")
     if not body.password or len(body.password) < 8:
@@ -239,12 +243,18 @@ async def redeem_invite(body: RedeemInviteRequest) -> RedeemInviteResponse:
     token_hash = hash_key(body.token, h.hmac_secret)
     invite = await repo.get_invite_token_by_hash(h.db, token_hash)
     if not invite or invite.get("redeemed_at"):
+        if h.brute_force is not None:
+            await h.brute_force.record_failure(ip, "invite_redeem")
         raise bad_request(INVITE_INVALID_MSG)
     try:
         exp = datetime.fromisoformat(invite["expires_at"].replace("Z", "+00:00"))
         if exp < datetime.now(timezone.utc):
+            if h.brute_force is not None:
+                await h.brute_force.record_failure(ip, "invite_redeem")
             raise bad_request(INVITE_INVALID_MSG)
     except ValueError:
+        if h.brute_force is not None:
+            await h.brute_force.record_failure(ip, "invite_redeem")
         raise bad_request(INVITE_INVALID_MSG)
     pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     try:
@@ -264,6 +274,8 @@ async def redeem_invite(body: RedeemInviteRequest) -> RedeemInviteResponse:
     except Exception:
         raise internal_error("failed to redeem invite")
     await repo.create_org_membership(h.db, invite["org_id"], user["id"], invite["role"])
+    if h.brute_force is not None:
+        await h.brute_force.clear(ip, "invite_redeem")
     return RedeemInviteResponse(
         id=user["id"],
         email=user["email"],

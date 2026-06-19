@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Callable
 
@@ -45,7 +46,12 @@ def register_health_routes(
         return JSONResponse({"status": "ok", "database": "ok"})
 
     @router.get("/metrics")
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        metrics_token = os.environ.get("WAI_METRICS_TOKEN", "")
+        if metrics_token:
+            auth = request.headers.get("Authorization", "")
+            if auth != f"Bearer {metrics_token}":
+                return Response(status_code=401)
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     app.include_router(router)

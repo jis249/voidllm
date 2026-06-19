@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from wai.api.admin.common import KeyInfo, ROLE_SYSTEM_ADMIN, has_role
 from wai.api.admin.handler import get_handler
+from wai.security.url import validate_http_url
 
 
 async def handle_mcp_proxy(alias: str, request: Request, key_info: KeyInfo) -> Response:
@@ -36,6 +37,14 @@ async def handle_mcp_proxy(alias: str, request: Request, key_info: KeyInfo) -> R
             media_type="application/json",
         )
     server = dict(row)
+    try:
+        validate_http_url(server["url"], allow_private=h.mcp_allow_private_urls)
+    except ValueError:
+        return Response(
+            content=json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "invalid MCP server URL"}}),
+            status_code=403,
+            media_type="application/json",
+        )
     if not server.get("org_id") and not server.get("team_id"):
         if not has_role(key_info.role, ROLE_SYSTEM_ADMIN):
             allowed_ids = await h.db.fetchall(
@@ -79,9 +88,9 @@ async def handle_mcp_proxy(alias: str, request: Request, key_info: KeyInfo) -> R
         if "text/event-stream" in accept:
             return Response(content=upstream.text, media_type="text/event-stream", status_code=upstream.status_code)
         return Response(content=upstream.content, media_type="application/json", status_code=upstream.status_code)
-    except Exception as e:
+    except Exception:
         return Response(
-            content=json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": str(e)}}),
+            content=json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "upstream MCP server error"}}),
             status_code=500,
             media_type="application/json",
         )

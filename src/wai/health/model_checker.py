@@ -13,8 +13,6 @@ import httpx
 
 from wai.crypto.aes import decrypt_string
 from wai.db.connection import Database
-from wai.proxy.providers.azure import AzureAdapter
-from wai.proxy.registry import Model
 
 
 def _utc_now_iso() -> str:
@@ -140,14 +138,8 @@ class ModelHealthChecker:
     def _models_url(self, row: dict[str, Any]) -> str:
         provider = row.get("provider") or ""
         if provider == "azure":
-            model = Model(
-                name=row["name"],
-                provider=provider,
-                base_url=row.get("base_url") or "",
-                azure_deployment=row.get("azure_deployment") or "",
-                azure_api_version=row.get("azure_api_version") or "",
-            )
-            return AzureAdapter().transform_url(model.base_url, "models", model)
+            version = row.get("azure_api_version") or "2024-10-21"
+            return f"{(row.get('base_url') or '').rstrip('/')}/openai/models?api-version={version}"
         return (row.get("base_url") or "").rstrip("/") + "/models"
 
     def _auth_headers(self, row: dict[str, Any]) -> dict[str, str]:

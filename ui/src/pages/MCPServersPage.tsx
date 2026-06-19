@@ -120,7 +120,7 @@ function IconRefresh() {
 function IconHealthDot() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   )
 }
@@ -195,33 +195,26 @@ interface HealthIndicatorProps {
   health: MCPServerHealth | undefined
 }
 
+const healthConfig: Record<
+  MCPServerHealth['status'],
+  { dotClass: string; label: string }
+> = {
+  healthy: { dotClass: 'bg-success', label: 'Healthy' },
+  unhealthy: { dotClass: 'bg-error', label: 'Unhealthy' },
+  unknown: { dotClass: 'bg-text-tertiary', label: 'Unknown' },
+}
+
 function HealthIndicator({ health }: HealthIndicatorProps) {
   if (health === undefined) {
     return (
       <div className="flex items-center gap-1.5">
-        <span
-          className="w-2 h-2 rounded-full shrink-0"
-          style={{ backgroundColor: '#6b7280' }}
-          aria-hidden="true"
-        />
-        <span className="text-text-tertiary text-sm">...</span>
+        <span className="w-2 h-2 rounded-full bg-text-tertiary opacity-40 shrink-0" aria-hidden="true" />
+        <span className="text-text-tertiary text-sm">Unknown</span>
       </div>
     )
   }
 
-  const dotColor =
-    health.status === 'healthy'
-      ? '#22c55e'
-      : health.status === 'unhealthy'
-      ? '#ef4444'
-      : '#6b7280'
-
-  const label =
-    health.status === 'healthy'
-      ? 'Healthy'
-      : health.status === 'unhealthy'
-      ? 'Unhealthy'
-      : '...'
+  const { dotClass, label } = healthConfig[health.status]
 
   const tooltipParts: string[] = []
   if (health.last_check) tooltipParts.push(`Last check: ${formatRelativeTime(health.last_check)}`)
@@ -231,21 +224,9 @@ function HealthIndicator({ health }: HealthIndicatorProps) {
   const tooltip = tooltipParts.join('\n')
 
   return (
-    <div
-      className="flex items-center gap-1.5"
-      title={tooltip || undefined}
-    >
-      <span
-        className="w-2 h-2 rounded-full shrink-0"
-        style={{ backgroundColor: dotColor }}
-        aria-hidden="true"
-      />
-      <span
-        className="text-sm"
-        style={{ color: health.status === 'healthy' ? '#a1afc4' : health.status === 'unhealthy' ? '#ef4444' : '#8494a8' }}
-      >
-        {label}
-      </span>
+    <div className="flex items-center gap-1.5" title={tooltip || undefined}>
+      <span className={cn('w-2 h-2 rounded-full shrink-0', dotClass)} aria-hidden="true" />
+      <span className="text-text-secondary text-sm">{label}</span>
       {health.status === 'healthy' && health.latency_ms > 0 && (
         <span className="text-text-tertiary text-xs tabular-nums">{health.latency_ms}ms</span>
       )}
@@ -1214,6 +1195,18 @@ export default function MCPServersPage() {
           {sourceLabel(row.source)}
         </Badge>
       ),
+    },
+    {
+      key: 'tools',
+      header: 'Tools',
+      render: (row) => {
+        const count = healthMap.get(row.id)?.tool_count
+        return (
+          <span className="text-text-secondary text-sm tabular-nums">
+            {count === undefined ? '—' : count}
+          </span>
+        )
+      },
     },
     {
       key: 'is_active',

@@ -43,6 +43,7 @@ def create_admin_router() -> APIRouter:
     # Public routes — no auth required (matches routes.go public group)
     public = APIRouter()
     public.add_api_route(f"{API_PREFIX}/auth/login", auth.login, methods=["POST"], tags=["auth"])
+    public.add_api_route(f"{API_PREFIX}/auth/oidc/exchange", auth.oidc_exchange, methods=["POST"], tags=["auth"])
     public.add_api_route(f"{API_PREFIX}/auth/providers", auth.auth_providers, methods=["GET"], tags=["auth"])
     public.add_api_route(f"{API_PREFIX}/invites/peek", invites.peek_invite, methods=["GET"], tags=["invites"])
     public.add_api_route(f"{API_PREFIX}/invites/redeem", invites.redeem_invite, methods=["POST"], tags=["invites"])
