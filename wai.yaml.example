@@ -1,0 +1,34 @@
+# WAI Configuration — copy to wai.yaml and set secrets in .env.local
+
+server:
+  proxy:
+    port: 8090
+  admin:
+    port: 0
+
+database:
+  driver: postgres
+  dsn: postgres://postgres:${POSTGRES_PASSWORD}@localhost:5432/wai?sslmode=disable
+
+models:
+  - name: gpt-4o-azure
+    provider: azure
+    type: chat
+    base_url: https://mycompany.openai.azure.com
+    api_key: ${AZURE_OPENAI_KEY}
+    azure_deployment: gpt-4o
+    azure_api_version: "2024-02-01"
+    aliases:
+      - default
+      - azure
+
+  - name: llama-local
+    provider: ollama
+    type: chat
+    base_url: http://127.0.0.1:11434/v1
+    aliases:
+      - local
+
+settings:
+  admin_key: ${WAI_ADMIN_KEY}
+  encryption_key: ${WAI_ENCRYPTION_KEY}

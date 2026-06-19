@@ -1,22 +1,19 @@
 ---
-name: Feature Request
-about: Suggest a new feature for VoidLLM
-title: "[Feature] "
+name: Feature request
+about: Suggest a new feature for WAI
+title: ''
 labels: enhancement
+assignees: ''
 ---
 
-## Problem
+**Problem**
+What problem does this solve?
 
-What problem does this feature solve? What's the use case?
+**Proposed solution**
+Describe the feature you'd like.
 
-## Proposed Solution
+**Alternatives considered**
+Other approaches you've thought about.
 
-How should it work? Include API examples, config snippets, or mockups if relevant.
-
-## Alternatives Considered
-
-Any other approaches you've considered.
-
-## Additional Context
-
-Any other context, screenshots, or references.
+**Additional context**
+Any other context or screenshots.

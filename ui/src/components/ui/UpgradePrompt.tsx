@@ -37,7 +37,7 @@ export function UpgradePrompt({ title, description }: UpgradePromptProps) {
           <p className="text-sm text-text-secondary mb-6">{description}</p>
           <div className="flex items-center justify-center gap-3">
             <a
-              href="https://voidllm.ai"
+              href="#"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-accent hover:underline"

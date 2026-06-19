@@ -17,10 +17,9 @@ Brief description of what this PR does and why.
 
 ## Checklist
 
-- [ ] `go test -race ./...` passes
-- [ ] `go vet ./...` passes
-- [ ] New code has godoc comments on all exports
-- [ ] No `// TODO` comments
+- [ ] `pip install -e .` succeeds
+- [ ] `python -c "from wai.app import create_app"` succeeds
+- [ ] `cd ui && npm run build` succeeds
 - [ ] No secrets in logs or error messages
 - [ ] No prompt/response content stored or logged (privacy)
 - [ ] SQL uses parameterized queries (no string concatenation)

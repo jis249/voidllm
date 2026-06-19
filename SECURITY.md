@@ -2,49 +2,28 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in VoidLLM, **please do not open a public issue.**
+If you discover a security vulnerability in WAI, **please do not open a public issue.**
 
-Instead, report it privately:
+Instead, report it privately by emailing the maintainers with:
 
-- **Email:** security@voidmind.io
-- **Subject:** `[VoidLLM Security] <brief description>`
-
-Include:
-- Description of the vulnerability
+- A description of the vulnerability
 - Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+- **Subject:** `[WAI Security] <brief description>`
 
-## Response Timeline
+We will acknowledge receipt within 48 hours and provide an estimated timeline for a fix.
 
-- **Acknowledgment:** within 48 hours
-- **Initial assessment:** within 5 business days
-- **Fix timeline:** depends on severity, typically within 14 days for critical issues
+## Supported Versions
 
-## Scope
+| Version | Supported |
+|---------|-----------|
+| 0.1.x   | Yes       |
 
-The following are in scope:
-- Authentication bypass (API key validation, RBAC enforcement)
-- Authorization issues (cross-org/cross-team data access)
-- SQL injection
-- SSRF via upstream URL manipulation
-- Header injection or leakage
-- Encryption key handling (AES-256-GCM, HMAC-SHA256)
-- Information disclosure (secrets in logs, error messages, responses)
-- Rate limit bypass
+## Security Principles
 
-The following are out of scope:
-- Vulnerabilities in upstream LLM providers
-- Denial of service via legitimate high traffic
-- Social engineering
+WAI follows these security principles by design:
 
-## Security Design Principles
-
-VoidLLM follows these security principles by design:
-
-- **Zero-knowledge proxy** — no prompt or response content is ever stored or logged
-- **Defense in depth** — RBAC enforced at both route middleware and handler level
-- **Allowlist, not blocklist** — header forwarding uses explicit allowlists
-- **Constant-time comparison** — API key verification uses `hmac.Equal`
-- **No redirect following** — prevents SSRF via HTTP redirects
-- **Encryption at rest** — upstream API keys encrypted with AES-256-GCM
+- API keys are hashed at rest (HMAC-SHA256)
+- Upstream provider keys are encrypted (AES-256-GCM)
+- Admin bootstrap credentials are shown once at first run
+- RBAC enforced on all admin endpoints
+- Secrets belong in `.env.local`, never in config files committed to git

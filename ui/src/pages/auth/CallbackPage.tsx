@@ -8,10 +8,10 @@ function getCookie(name: string): string | null {
 
 export default function CallbackPage() {
   useEffect(() => {
-    const token = getCookie('voidllm_oidc_token')
+    const token = getCookie('wai_oidc_token')
     if (token) {
       localStorage.setItem(LOCAL_STORAGE_KEY, token)
-      document.cookie = 'voidllm_oidc_token=; path=/auth/callback; max-age=0'
+      document.cookie = 'wai_oidc_token=; path=/auth/callback; max-age=0'
       window.location.href = '/'
     } else {
       window.location.href = '/login?error=sso_error'

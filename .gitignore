@@ -1,12 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
 # Binaries
 bin/
 tmp/
 
 # Build output
 ui/dist/
+ui/.vite/
 
 # Config (never commit secrets)
-voidllm.yaml
+wai.yaml
 *.license.jwt
 
 # Database
@@ -30,15 +39,8 @@ data/
 .DS_Store
 Thumbs.db
 
-# Go
-vendor/
-
 # Node
 node_modules/
 
 # Claude Code (auto-generated, never commit)
 .claude/
-
-# Binary (built by go build)
-/voidllm
-/bench

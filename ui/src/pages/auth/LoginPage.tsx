@@ -63,7 +63,8 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: { message: res.statusText } }))
-        setError((body as { error?: { message?: string } })?.error?.message ?? 'Login failed')
+        const err = body as { error?: { message?: string }; detail?: { error?: { message?: string } } }
+        setError(err.error?.message ?? err.detail?.error?.message ?? 'Login failed')
         return
       }
 

@@ -1,37 +1,26 @@
 ---
-name: Bug Report
-about: Report a bug in VoidLLM
-title: "[Bug] "
+name: Bug report
+about: Report a bug in WAI
+title: ''
 labels: bug
+assignees: ''
 ---
 
-## Describe the Bug
+**Describe the bug**
+A clear description of what went wrong.
 
-A clear description of what the bug is.
+**To reproduce**
+1. Configure WAI with...
+2. Run...
+3. See error
 
-## To Reproduce
-
-1. Configure VoidLLM with...
-2. Send request...
-3. Observe...
-
-## Expected Behavior
-
+**Expected behavior**
 What you expected to happen.
 
-## Environment
+**Environment**
+- WAI version: (e.g., 0.1.0 or commit hash)
+- OS:
+- Database: PostgreSQL version
 
-- VoidLLM version: (e.g., 0.1.0 or commit hash)
-- OS: (e.g., Linux, macOS, Windows)
-- Database: (SQLite / PostgreSQL)
-- Upstream provider: (e.g., vLLM, Ollama, OpenAI, Anthropic)
-
-## Logs
-
-```
-Paste relevant log output here (remove any secrets/keys first!)
-```
-
-## Additional Context
-
-Any other context about the problem.
+**Additional context**
+Logs, screenshots, or config snippets (redact secrets).

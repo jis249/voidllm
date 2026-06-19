@@ -394,7 +394,7 @@ export default function LicensePage() {
 
                 <Button
                   variant="primary"
-                  onClick={() => window.open('https://voidllm.ai/pricing', '_blank')}
+                  onClick={() => {}}
                 >
                   Upgrade to Pro
                 </Button>
@@ -424,7 +424,7 @@ export default function LicensePage() {
 
               <Button
                 variant="secondary"
-                onClick={() => window.open('https://voidllm.ai/pricing', '_blank')}
+                onClick={() => {}}
               >
                 Contact Sales
               </Button>

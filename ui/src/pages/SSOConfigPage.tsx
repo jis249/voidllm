@@ -40,7 +40,7 @@ function GlobalSSOCard() {
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Global Configuration</h2>
           <p className="text-xs text-text-tertiary mt-0.5">
-            Set via <span className="font-mono">voidllm.yaml</span> — read-only from the UI
+            Set via <span className="font-mono">wai.yaml</span> — read-only from the UI
           </p>
         </div>
         {config && (
@@ -63,7 +63,7 @@ function GlobalSSOCard() {
         {isError && (
           <p className="text-sm text-text-tertiary">
             No global SSO configuration found. Configure one in{' '}
-            <span className="font-mono text-xs">voidllm.yaml</span>.
+            <span className="font-mono text-xs">wai.yaml</span>.
           </p>
         )}
 

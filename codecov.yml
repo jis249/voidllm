@@ -11,12 +11,9 @@ coverage:
 flags:
   backend:
     paths:
-      - "internal/"
-      - "cmd/"
-      - "pkg/"
+      - "src/wai/"
     carryforward: true
 
 ignore:
   - "ui/"
-  - "docs/"
   - "scripts/"

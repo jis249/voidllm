@@ -989,7 +989,7 @@ function ServerExpandedRow({ server, canModify, health }: ServerExpandedRowProps
             Client Config
           </button>
           <div className="flex items-center gap-1">
-            {server.alias === 'voidllm' && (
+            {server.alias === 'wai' && (
               <button
                 type="button"
                 onClick={() => handleCopyConfig(true)}
@@ -1018,7 +1018,7 @@ function ServerExpandedRow({ server, canModify, health }: ServerExpandedRowProps
               config={generateMCPConfig(server.alias)}
               onCopy={() => toast({ variant: 'success', message: 'Copied to clipboard' })}
             />
-            {server.alias === 'voidllm' && (
+            {server.alias === 'wai' && (
               <ClientConfigSnippet
                 label="Code Mode (all tools)"
                 config={generateMCPConfig(server.alias, true)}

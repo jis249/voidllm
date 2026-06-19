@@ -15,7 +15,12 @@ export interface MCPServerHealth {
 export function useMCPServerHealth() {
   return useQuery<MCPServerHealth[]>({
     queryKey: ['mcp-server-health'],
-    queryFn: () => apiClient<MCPServerHealth[]>('/mcp-servers/health'),
-    refetchInterval: 15_000, // refresh every 15s like model health
+    queryFn: async () => {
+      const data = await apiClient<MCPServerHealth[] | { servers?: MCPServerHealth[] }>(
+        '/mcp-servers/health',
+      )
+      return Array.isArray(data) ? data : (data.servers ?? [])
+    },
+    refetchInterval: 15_000,
   })
 }

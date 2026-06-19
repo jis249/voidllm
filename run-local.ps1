@@ -1,47 +1,23 @@
 param(
-    [string]$Version = "v0.0.19",
     [string]$PostgresUser = "postgres",
     [string]$PostgresPassword = "",
     [string]$DatabaseName = "wai",
+    [string]$Config = "",
     [switch]$BackendOnly,
-    [switch]$BackendDetached
+    [switch]$BackendDetached,
+    [switch]$DevUi
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BinDir = Join-Path $Root "bin"
 $DataDir = Join-Path $Root "data"
 $EnvFile = Join-Path $Root ".env.local"
-$ReleaseExe = Join-Path $BinDir "voidllm.exe"
-$LocalExe = Join-Path $BinDir "wai-local.exe"
-$Exe = $ReleaseExe
-$Config = Join-Path $Root "voidllm.yaml"
-$UiDir = Join-Path $Root "ui"
-
-function Get-PostgresTool {
-    param([string]$Name)
-
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    $commonPaths = @(
-        "C:\Program Files\PostgreSQL\18\bin\$Name",
-        "C:\Program Files\PostgreSQL\17\bin\$Name",
-        "C:\Program Files\PostgreSQL\16\bin\$Name",
-        "C:\Program Files\PostgreSQL\15\bin\$Name"
-    )
-
-    foreach ($path in $commonPaths) {
-        if (Test-Path $path) {
-            return $path
-        }
-    }
-
-    throw "$Name was not found. Install PostgreSQL client tools or add them to PATH."
+if ([string]::IsNullOrWhiteSpace($Config)) {
+    $Config = Join-Path $Root "wai.yaml"
 }
+$UiDir = Join-Path $Root "ui"
+$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
 
 function New-Secret {
     $bytes = [byte[]]::new(32)
@@ -86,59 +62,113 @@ function Set-OllamaPerformanceDefaults {
     }
 }
 
-function Initialize-GoPath {
-    if (Get-Command go -ErrorAction SilentlyContinue) {
-        return
+function Get-PostgresTool {
+    param([string]$Name)
+
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
     }
 
-    $defaultGoBin = "C:\Program Files\Go\bin"
-    if (Test-Path (Join-Path $defaultGoBin "go.exe")) {
-        $env:Path = "$defaultGoBin;$env:Path"
+    $commonPaths = @(
+        "C:\Program Files\PostgreSQL\18\bin\$Name",
+        "C:\Program Files\PostgreSQL\17\bin\$Name",
+        "C:\Program Files\PostgreSQL\16\bin\$Name",
+        "C:\Program Files\PostgreSQL\15\bin\$Name"
+    )
+
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+
+    throw "$Name was not found. Install PostgreSQL client tools or add them to PATH."
+}
+
+function Test-PostgresPort {
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $client.Connect("127.0.0.1", 5432)
+        $client.Close()
+        return $true
+    } catch {
+        return $false
     }
 }
 
-function Use-BackendBinary {
-    Initialize-GoPath
+function Start-DockerPostgres {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        return $false
+    }
 
-    $goMod = Join-Path $Root "go.mod"
-    $go = Get-Command go -ErrorAction SilentlyContinue
-    if ((Test-Path $goMod) -and $go) {
-        Write-Host "Building wai backend from local source..."
-        Push-Location $Root
-        try {
-            & $go.Source build -o $LocalExe ./cmd/voidllm
-            if ($LASTEXITCODE -ne 0) {
-                throw "go build failed with exit code $LASTEXITCODE"
-            }
-        } finally {
-            Pop-Location
+    $compose = Join-Path $Root "docker-compose.yml"
+    if (-not (Test-Path $compose)) {
+        return $false
+    }
+
+    Write-Host "Starting PostgreSQL via Docker Compose..."
+    docker compose -f $compose up -d postgres | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Seconds 1
+        if (Test-PostgresPort) {
+            return $true
         }
-        return $LocalExe
     }
 
-    if ((Test-Path $LocalExe) -and (
-            -not (Test-Path $ReleaseExe) -or
-            (Get-Item $LocalExe).LastWriteTime -gt (Get-Item $ReleaseExe).LastWriteTime
-        )) {
-        Write-Host "Using previously built wai backend at $LocalExe"
-        return $LocalExe
+    return $false
+}
+
+function Ensure-PostgresDatabase {
+    param(
+        [string]$User,
+        [string]$Password,
+        [string]$DbName
+    )
+
+    if (-not (Test-PostgresPort)) {
+        if (-not (Start-DockerPostgres)) {
+            throw "PostgreSQL is not accepting connections on localhost:5432. Start PostgreSQL or run: docker compose up -d postgres"
+        }
     }
 
-    if (-not (Test-Path $ReleaseExe)) {
-        $zip = Join-Path $BinDir "voidllm-windows-amd64.zip"
-        $url = "https://github.com/voidmind-io/voidllm/releases/download/$Version/voidllm-windows-amd64.zip"
-        Write-Host "Downloading VoidLLM $Version..."
-        Invoke-WebRequest -Uri $url -OutFile $zip
-        Expand-Archive -Path $zip -DestinationPath $BinDir -Force
-        Remove-Item $zip
+    $psql = Get-PostgresTool "psql.exe"
+    $env:PGPASSWORD = $Password
+    $exists = & $psql -h localhost -p 5432 -U $User -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DbName'"
+    if ($exists -ne "1") {
+        Write-Host "Creating PostgreSQL database '$DbName'..."
+        & $psql -h localhost -p 5432 -U $User -d postgres -c "CREATE DATABASE $DbName;"
     }
+}
 
-    return $ReleaseExe
+function Ensure-PythonEnv {
+    if (-not (Test-Path $VenvPython)) {
+        Write-Host "Creating Python virtual environment..."
+        python -m venv (Join-Path $Root ".venv")
+        & $VenvPython -m pip install --upgrade pip
+        & $VenvPython -m pip install -e $Root
+    }
+}
+
+function Get-ProxyPort {
+    param([string]$ConfigPath)
+    if (-not (Test-Path $ConfigPath)) {
+        return 8090
+    }
+    $match = Select-String -Path $ConfigPath -Pattern '^\s*port:\s*(\d+)\s*$' | Select-Object -First 1
+    if ($match -and $match.Matches.Groups.Count -gt 1) {
+        return [int]$match.Matches.Groups[1].Value
+    }
+    return 8090
 }
 
 function Start-BackendDetached {
     param(
-        [int]$Port = 8080,
+        [int]$Port = 8090,
         [string]$LogName = "wai-backend.log",
         [string]$ErrorLogName = "wai-backend.err.log"
     )
@@ -151,8 +181,9 @@ function Start-BackendDetached {
 
     $backendLog = Join-Path $DataDir $LogName
     $backendErr = Join-Path $DataDir $ErrorLogName
-    $backendProcess = Start-Process -FilePath $Exe `
-        -ArgumentList @("--config", $Config) `
+    $env:WAI_DEV = "true"
+    $backendProcess = Start-Process -FilePath $VenvPython `
+        -ArgumentList @("-m", "wai", "--config", $Config, "--host", "0.0.0.0", "--port", "$Port") `
         -WorkingDirectory $Root `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendLog `
@@ -187,20 +218,21 @@ function Start-BackendDetached {
     Write-Host "Backend logs: $backendLog"
 }
 
-New-Item -ItemType Directory -Force -Path $BinDir, $DataDir | Out-Null
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 $envValues = Read-LocalEnv
-if (-not $envValues.ContainsKey("VOIDLLM_ADMIN_KEY")) {
-    $envValues["VOIDLLM_ADMIN_KEY"] = New-Secret
+if (-not $envValues.ContainsKey("WAI_ADMIN_KEY")) {
+    $envValues["WAI_ADMIN_KEY"] = New-Secret
 }
-if (-not $envValues.ContainsKey("VOIDLLM_ENCRYPTION_KEY")) {
-    $envValues["VOIDLLM_ENCRYPTION_KEY"] = New-Secret
+if (-not $envValues.ContainsKey("WAI_ENCRYPTION_KEY")) {
+    $envValues["WAI_ENCRYPTION_KEY"] = New-Secret
 }
 if (-not $envValues.ContainsKey("POSTGRES_PASSWORD")) {
-    if ([string]::IsNullOrWhiteSpace($PostgresPassword)) {
+    if (-not [string]::IsNullOrWhiteSpace($PostgresPassword)) {
+        $envValues["POSTGRES_PASSWORD"] = $PostgresPassword
+    } else {
         throw "Set POSTGRES_PASSWORD in .env.local or pass -PostgresPassword."
     }
-    $envValues["POSTGRES_PASSWORD"] = $PostgresPassword
 }
 Set-OllamaPerformanceDefaults -Values $envValues
 
@@ -214,51 +246,51 @@ foreach ($entry in $envValues.GetEnumerator()) {
 }
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    throw "Ollama is not installed or is not on PATH."
+    Write-Warning "Ollama is not installed or is not on PATH."
+} else {
+    try {
+        Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 | Out-Null
+    } catch {
+        Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Sleep -Seconds 3
+    }
 }
+
+Ensure-PythonEnv
+
+if (-not $envValues.ContainsKey("POSTGRES_PASSWORD")) {
+    throw "POSTGRES_PASSWORD is required for PostgreSQL."
+}
+
+& $VenvPython (Join-Path $Root "scripts\ensure_pg_db.py")
+if ($LASTEXITCODE -ne 0) { throw "Failed to ensure PostgreSQL database exists." }
 
 try {
-    Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 | Out-Null
+    Ensure-PostgresDatabase -User $PostgresUser -Password $envValues["POSTGRES_PASSWORD"] -DbName $DatabaseName
 } catch {
-    Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
-    Start-Sleep -Seconds 3
+    Write-Warning "psql/pg_isready not available; database was ensured via Python script."
 }
 
-$psql = Get-PostgresTool "psql.exe"
-$pgIsReady = Get-PostgresTool "pg_isready.exe"
-
-& $pgIsReady -h localhost -p 5432 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "PostgreSQL is not accepting connections on localhost:5432."
-}
-
-$env:PGPASSWORD = $envValues["POSTGRES_PASSWORD"]
-$exists = & $psql -h localhost -p 5432 -U $PostgresUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DatabaseName'"
-if ($exists -ne "1") {
-    & $psql -h localhost -p 5432 -U $PostgresUser -d postgres -c "CREATE DATABASE $DatabaseName;"
-}
-
-$Exe = Use-BackendBinary
+$Port = Get-ProxyPort -ConfigPath $Config
 
 if ($BackendDetached) {
     Write-Host "Starting wai backend in the background..."
-    Write-Host "Embedded UI/API: http://localhost:8080"
+    Write-Host "API: http://localhost:$Port"
     Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
-    Write-Host "Models: default/local/coder/local-code -> qwen3-coder:30b, local-embedding -> bge-m3:latest"
-    Start-BackendDetached -Port 8080
+    Start-BackendDetached -Port $Port
     exit 0
 }
 
 if ($BackendOnly) {
     Write-Host "Starting wai backend locally..."
-    Write-Host "Embedded UI/API: http://localhost:8080"
+    Write-Host "API: http://localhost:$Port"
     Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
-    Write-Host "Models: default/local/coder/local-code -> qwen3-coder:30b, local-embedding -> bge-m3:latest"
-    & $Exe --config $Config
+    $env:WAI_DEV = "true"
+    & $VenvPython -m wai --config $Config --host 0.0.0.0 --port $Port
     exit $LASTEXITCODE
 }
 
-Start-BackendDetached -Port 8080
+Start-BackendDetached -Port $Port
 
 if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
     Push-Location $UiDir
@@ -269,11 +301,26 @@ if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
     }
 }
 
-Write-Host "Starting wai source UI locally..."
-Write-Host "WAI UI: http://127.0.0.1:5173"
-Write-Host "Backend API: http://localhost:8080"
+if (-not (Test-Path (Join-Path $UiDir "dist\index.html"))) {
+    Write-Host "Building wai UI..."
+    Push-Location $UiDir
+    try {
+        npm run build
+    } finally {
+        Pop-Location
+    }
+}
+
+Write-Host "WAI dashboard: http://localhost:$Port"
 Write-Host "Database: PostgreSQL localhost:5432/$DatabaseName"
-Write-Host "Models: default/local/coder/local-code -> qwen3-coder:30b, local-embedding -> bge-m3:latest"
+
+if (-not $DevUi) {
+    Write-Host "Backend running in background. Use -DevUi for Vite hot-reload on port 5173."
+    exit 0
+}
+
+Write-Host "WAI dev UI: http://127.0.0.1:5173"
+Write-Host "Backend API: http://localhost:$Port"
 Push-Location $UiDir
 try {
     npm run dev -- --host 127.0.0.1
