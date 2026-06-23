@@ -19,7 +19,6 @@ from wai.api.admin.common import (
     forbidden,
     has_role,
     internal_error,
-    limit_reached,
     not_found,
     parse_pagination,
 )
@@ -122,11 +121,6 @@ async def create_team(
         raise bad_request("name is required")
     if not body.slug or not SLUG_RE.match(body.slug):
         raise bad_request("slug must be lowercase alphanumeric with hyphens, 2-63 characters")
-    lic = h.license.load()
-    if lic.max_teams > 0:
-        count = await repo.count_teams(h.db, org_id)
-        if count >= lic.max_teams:
-            raise limit_reached("team limit reached for your plan")
     try:
         team = await repo.create_team(h.db, org_id, body.model_dump())
     except repo.ConflictError:

@@ -14,6 +14,7 @@ export interface AuditEvent {
   description: string
   ip_address: string
   status_code: number
+  request_id: string
 }
 
 export interface AuditLogResponse {
@@ -24,31 +25,34 @@ export interface AuditLogResponse {
 
 export interface AuditLogParams {
   orgId: string
+  actorId: string
   resourceType: string
   action: string
   from: string
   to: string
   limit: number
   cursor: string
+  enabled?: boolean
 }
 
 export function useAuditLog(params: AuditLogParams) {
-  const { orgId, resourceType, action, from, to, limit, cursor } = params
+  const { orgId, actorId, resourceType, action, from, to, limit, cursor, enabled = true } = params
 
   const query = new URLSearchParams({
-    org_id: orgId,
     limit: String(limit),
   })
+  if (orgId) query.set('org_id', orgId)
   if (cursor) query.set('cursor', cursor)
+  if (actorId) query.set('actor_id', actorId)
   if (resourceType) query.set('resource_type', resourceType)
   if (action) query.set('action', action)
   if (from) query.set('from', from)
   if (to) query.set('to', to)
 
   return useQuery({
-    queryKey: ['audit-log', orgId, resourceType, action, from, to, limit, cursor],
+    queryKey: ['audit-log', orgId, actorId, resourceType, action, from, to, limit, cursor],
     queryFn: () => apiClient<AuditLogResponse>(`/audit-logs?${query.toString()}`),
-    enabled: !!orgId,
+    enabled,
     staleTime: 30_000,
   })
 }

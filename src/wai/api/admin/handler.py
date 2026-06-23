@@ -33,22 +33,6 @@ from wai.proxy.access import ModelAccessCache, reload_access_cache
 
 
 @dataclass
-class LicenseHolder:
-    """Thread-safe in-memory license state (simplified community edition)."""
-
-    edition: str = "community"
-    valid: bool = True
-    features: list[str] = field(default_factory=list)
-    max_orgs: int = -1
-    max_teams: int = -1
-    customer_id: str = ""
-    expires_at: datetime | None = None
-
-    def load(self) -> LicenseHolder:
-        return self
-
-
-@dataclass
 class SSOConfig:
     enabled: bool = False
     issuer: str = ""
@@ -114,7 +98,6 @@ class Handler:
         encryption_key: bytes | None = None,
         sso_config: SSOConfig | None = None,
         sso_provider: Any = None,
-        license_holder: LicenseHolder | None = None,
         registry: ModelRegistry | None = None,
         access_cache: ModelAccessCache | None = None,
         mcp_server_cache: Any = None,
@@ -136,7 +119,6 @@ class Handler:
         self.encryption_key = encryption_key or load_encryption_key()
         self.hmac_secret = derive_hmac_secret(self.encryption_key)
         self.key_cache = KeyCache()
-        self.license = license_holder or LicenseHolder()
         self.registry = registry or ModelRegistry()
         self.access_cache = access_cache or ModelAccessCache()
         self.mcp_server_cache = mcp_server_cache

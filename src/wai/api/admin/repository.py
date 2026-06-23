@@ -1057,8 +1057,13 @@ async def list_audit_logs(db: Database, filters: dict[str, Any], limit: int) -> 
         clauses.append("resource_type = ?")
         params.append(filters["resource_type"])
     if filters.get("action"):
-        clauses.append("action = ?")
-        params.append(filters["action"])
+        action = str(filters["action"])
+        if "." in action:
+            clauses.append("action = ?")
+            params.append(action)
+        else:
+            clauses.append("(action = ? OR action LIKE ?)")
+            params.extend([action, f"%.{action}"])
     if filters.get("from"):
         clauses.append("timestamp >= ?")
         params.append(filters["from"])

@@ -1,62 +1,53 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Table } from '../components/ui/Table'
 import type { Column } from '../components/ui/Table'
 import { Badge, type BadgeProps } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { StatCard } from '../components/ui/StatCard'
 import { TimeAgo } from '../components/ui/TimeAgo'
-import { UpgradePrompt } from '../components/ui/UpgradePrompt'
 import { useMe } from '../hooks/useMe'
-import { useLicense } from '../hooks/useLicense'
+import { useOrgs } from '../hooks/useOrgs'
 import { useAuditLog } from '../hooks/useAuditLog'
 import type { AuditEvent } from '../hooks/useAuditLog'
+import { exportData } from '../lib/export'
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const TIME_RANGES = ['24h', '7d', '30d'] as const
+const TIME_RANGES = ['24h', '7d', '30d', '90d'] as const
 type TimeRange = (typeof TIME_RANGES)[number]
 
 const RANGE_LABELS: Record<TimeRange, string> = {
   '24h': 'Last 24h',
   '7d': 'Last 7d',
   '30d': 'Last 30d',
+  '90d': 'Last 90d',
 }
 
 const RANGE_HOURS: Record<TimeRange, number> = {
   '24h': 24,
   '7d': 168,
   '30d': 720,
-}
-
-function getTimeRange(range: TimeRange): { from: string; to: string } {
-  const now = new Date()
-  const from = new Date(now.getTime() - RANGE_HOURS[range] * 3_600_000)
-  return { from: from.toISOString(), to: now.toISOString() }
+  '90d': 2160,
 }
 
 const RESOURCE_TYPE_OPTIONS = [
   { value: '', label: 'All Resources' },
-  { value: 'org', label: 'Org' },
-  { value: 'team', label: 'Team' },
-  { value: 'user', label: 'User' },
-  { value: 'key', label: 'Key' },
-  { value: 'model', label: 'Model' },
-  { value: 'service_account', label: 'Service Account' },
+  { value: 'orgs', label: 'Organizations' },
+  { value: 'users', label: 'Users' },
+  { value: 'models', label: 'Models' },
+  { value: 'mcp-servers', label: 'MCP Servers' },
+  { value: 'settings', label: 'Settings' },
+  { value: 'auth', label: 'Auth' },
 ]
 
 const ACTION_OPTIONS = [
   { value: '', label: 'All Actions' },
   { value: 'create', label: 'Create' },
   { value: 'update', label: 'Update' },
+  { value: 'replace', label: 'Replace' },
   { value: 'delete', label: 'Delete' },
-  { value: 'revoke', label: 'Revoke' },
-  { value: 'activate', label: 'Activate' },
-  { value: 'deactivate', label: 'Deactivate' },
-  { value: 'login', label: 'Login' },
+  { value: 'auth.login', label: 'Login' },
 ]
 
 const PAGE_SIZE_OPTIONS = [
@@ -65,9 +56,55 @@ const PAGE_SIZE_OPTIONS = [
   { value: '100', label: '100 / page' },
 ]
 
-// ---------------------------------------------------------------------------
-// Icons
-// ---------------------------------------------------------------------------
+const EXPORT_HEADERS = [
+  { key: 'timestamp', label: 'Time' },
+  { key: 'actor_type', label: 'Actor Type' },
+  { key: 'actor_id', label: 'Actor ID' },
+  { key: 'action', label: 'Action' },
+  { key: 'resource_type', label: 'Resource Type' },
+  { key: 'resource_id', label: 'Resource ID' },
+  { key: 'description', label: 'Details' },
+  { key: 'ip_address', label: 'IP' },
+  { key: 'status_code', label: 'Status' },
+  { key: 'request_id', label: 'Request ID' },
+]
+
+function getTimeRange(range: TimeRange): { from: string; to: string } {
+  const now = new Date()
+  const from = new Date(now.getTime() - RANGE_HOURS[range] * 3_600_000)
+  return { from: from.toISOString(), to: now.toISOString() }
+}
+
+type BadgeVariant = NonNullable<BadgeProps['variant']>
+
+const ACTION_BADGE: Record<string, BadgeVariant> = {
+  create: 'success',
+  update: 'info',
+  replace: 'info',
+  delete: 'error',
+  revoke: 'warning',
+  activate: 'success',
+  deactivate: 'muted',
+  login: 'default',
+}
+
+function actionBadgeVariant(action: string): BadgeVariant {
+  const verb = action.split('.').pop() ?? action
+  return ACTION_BADGE[verb.toLowerCase()] ?? 'muted'
+}
+
+function statusBadgeVariant(code: number): BadgeVariant {
+  if (code >= 200 && code < 300) return 'success'
+  if (code >= 400 && code < 500) return 'warning'
+  if (code >= 500) return 'error'
+  return 'muted'
+}
+
+function shortenId(id: string): string {
+  if (!id) return '—'
+  if (id.length <= 12) return id
+  return `${id.slice(0, 8)}…`
+}
 
 function IconList() {
   return (
@@ -99,46 +136,15 @@ function IconActivity() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Badge helpers
-// ---------------------------------------------------------------------------
-
-type BadgeVariant = NonNullable<BadgeProps['variant']>
-
-const ACTION_BADGE: Record<string, BadgeVariant> = {
-  create: 'success',
-  update: 'info',
-  delete: 'error',
-  revoke: 'warning',
-  activate: 'success',
-  deactivate: 'muted',
-  login: 'default',
+function IconDownload() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
 }
-
-function actionBadgeVariant(action: string): BadgeVariant {
-  return ACTION_BADGE[action.toLowerCase()] ?? 'muted'
-}
-
-function statusBadgeVariant(code: number): BadgeVariant {
-  if (code >= 200 && code < 300) return 'success'
-  if (code >= 400 && code < 500) return 'warning'
-  if (code >= 500) return 'error'
-  return 'muted'
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function shortenId(id: string): string {
-  if (!id) return '—'
-  if (id.length <= 12) return id
-  return `${id.slice(0, 8)}…`
-}
-
-// ---------------------------------------------------------------------------
-// Table columns
-// ---------------------------------------------------------------------------
 
 const columns: Column<AuditEvent>[] = [
   {
@@ -169,9 +175,14 @@ const columns: Column<AuditEvent>[] = [
     key: 'resource_type',
     header: 'Resource',
     render: (row) => (
-      <Badge variant="muted">
-        {row.resource_type}
-      </Badge>
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="muted">{row.resource_type}</Badge>
+        {row.resource_id && (
+          <span className="font-mono text-[11px] text-text-tertiary" title={row.resource_id}>
+            {shortenId(row.resource_id)}
+          </span>
+        )}
+      </div>
     ),
   },
   {
@@ -193,6 +204,15 @@ const columns: Column<AuditEvent>[] = [
     ),
   },
   {
+    key: 'request_id',
+    header: 'Request',
+    render: (row) => (
+      <span className="font-mono text-[11px] text-text-tertiary" title={row.request_id}>
+        {row.request_id ? shortenId(row.request_id) : '—'}
+      </span>
+    ),
+  },
+  {
     key: 'status_code',
     header: 'Status',
     align: 'right',
@@ -204,49 +224,54 @@ const columns: Column<AuditEvent>[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
-// AuditLogPage
-// ---------------------------------------------------------------------------
-
 export default function AuditLogPage() {
-  const [range, setRange] = useState<TimeRange>('24h')
+  const [range, setRange] = useState<TimeRange>('7d')
   const [resourceType, setResourceType] = useState('')
   const [action, setAction] = useState('')
+  const [actorId, setActorId] = useState('')
   const [pageSize, setPageSize] = useState(50)
-  // '' represents the first page (no cursor); each subsequent entry is the
-  // cursor returned by the previous page response.
   const [cursors, setCursors] = useState<string[]>([''])
   const currentCursor = cursors[cursors.length - 1]
 
   const { data: me } = useMe()
-  const { data: license } = useLicense()
-  const orgId = me?.org_id ?? ''
+  const isSystemAdmin = me?.is_system_admin === true
+  const [selectedOrgId, setSelectedOrgId] = useState('')
+  const { data: orgsData } = useOrgs(undefined)
+  const orgId = isSystemAdmin ? selectedOrgId : (me?.org_id ?? '')
 
   const { from, to } = useMemo(() => getTimeRange(range), [range])
 
+  const canQuery = !!me && (isSystemAdmin || !!orgId)
+
   const { data, isLoading } = useAuditLog({
     orgId,
+    actorId: actorId.trim(),
     resourceType,
     action,
     from,
     to,
     limit: pageSize,
     cursor: currentCursor,
+    enabled: canQuery,
   })
 
-  if (license && !license.features.includes('audit_logs')) {
-    return (
-      <UpgradePrompt
-        title="Audit Log"
-        description="Audit logging requires an Enterprise license."
-      />
-    )
-  }
+  useEffect(() => {
+    setCursors([''])
+  }, [orgId, actorId, resourceType, action, range, pageSize])
 
   const events = data?.data ?? []
   const hasPrevious = cursors.length > 1
   const hasNext = data?.has_more ?? false
-  const uniqueActors = new Set(events.map((e) => e.actor_id)).size
+  const uniqueActors = new Set(events.map((e) => e.actor_id).filter(Boolean)).size
+  const activeFilterCount = [resourceType, action, actorId.trim(), isSystemAdmin && selectedOrgId].filter(Boolean).length
+
+  const orgOptions = useMemo(() => {
+    const orgs = orgsData?.data ?? []
+    return [
+      { value: '', label: 'All organizations' },
+      ...orgs.map((org) => ({ value: org.id, label: org.name })),
+    ]
+  }, [orgsData])
 
   function handleNext() {
     if (data?.cursor) {
@@ -258,31 +283,10 @@ export default function AuditLogPage() {
     setCursors((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))
   }
 
-  function handleRangeChange(newRange: TimeRange) {
-    setRange(newRange)
-    setCursors([''])
-  }
+  const isDataLoading = isLoading && canQuery
 
-  function handleResourceTypeChange(value: string) {
-    setResourceType(value)
-    setCursors([''])
-  }
-
-  function handleActionChange(value: string) {
-    setAction(value)
-    setCursors([''])
-  }
-
-  function handlePageSizeChange(value: string) {
-    setPageSize(Number(value))
-    setCursors([''])
-  }
-
-  const isDataLoading = isLoading && !!orgId
-
-  const activeFilterCount = [resourceType, action].filter(Boolean).length
   const emptyMessage = activeFilterCount > 0
-    ? `No audit events match the selected filters`
+    ? 'No audit events match the selected filters'
     : `No audit events found for the ${RANGE_LABELS[range].toLowerCase()} time range`
 
   return (
@@ -292,10 +296,9 @@ export default function AuditLogPage() {
         description="Full audit trail of admin actions across your organization"
       />
 
-      {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
-          label="Total Events"
+          label="Events on Page"
           value={isDataLoading ? '—' : events.length}
           icon={<IconList />}
           iconColor="purple"
@@ -314,51 +317,89 @@ export default function AuditLogPage() {
         />
       </div>
 
-      {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-6">
-        {/* Time range segmented pills */}
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-bg-tertiary">
-          {TIME_RANGES.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => handleRangeChange(r)}
-              className={[
-                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                range === r
-                  ? 'bg-bg-secondary text-text-primary shadow-sm'
-                  : 'text-text-tertiary hover:text-text-secondary',
-              ].join(' ')}
-            >
-              {RANGE_LABELS[r]}
-            </button>
-          ))}
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-bg-tertiary w-fit">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRange(r)}
+                className={[
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  range === r
+                    ? 'bg-bg-secondary text-text-primary shadow-sm'
+                    : 'text-text-tertiary hover:text-text-secondary',
+                ].join(' ')}
+              >
+                {RANGE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3 lg:ml-auto">
+            {isSystemAdmin && (
+              <div className="w-52">
+                <Select
+                  label="Organization"
+                  value={selectedOrgId}
+                  onChange={setSelectedOrgId}
+                  options={orgOptions}
+                  fullWidth
+                />
+              </div>
+            )}
+            <div className="w-44">
+              <Select
+                label="Resource"
+                value={resourceType}
+                onChange={setResourceType}
+                options={RESOURCE_TYPE_OPTIONS}
+                fullWidth
+              />
+            </div>
+            <div className="w-40">
+              <Select
+                label="Action"
+                value={action}
+                onChange={setAction}
+                options={ACTION_OPTIONS}
+                fullWidth
+              />
+            </div>
+            <div className="w-52">
+              <Input
+                label="Actor ID"
+                value={actorId}
+                onChange={(e) => setActorId(e.target.value)}
+                placeholder="Filter by actor UUID"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Dropdowns pushed to the right */}
-        <div className="flex items-end gap-3 sm:ml-auto">
-          <div className="w-44">
-            <Select
-              label="Resource"
-              value={resourceType}
-              onChange={handleResourceTypeChange}
-              options={RESOURCE_TYPE_OPTIONS}
-              fullWidth
-            />
-          </div>
-          <div className="w-40">
-            <Select
-              label="Action"
-              value={action}
-              onChange={handleActionChange}
-              options={ACTION_OPTIONS}
-              fullWidth
-            />
-          </div>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<IconDownload />}
+            onClick={() => exportData(events as unknown as Record<string, unknown>[], EXPORT_HEADERS, `wai-audit-log-${range}`, 'csv')}
+            disabled={events.length === 0}
+          >
+            CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<IconDownload />}
+            onClick={() => exportData(events as unknown as Record<string, unknown>[], EXPORT_HEADERS, `wai-audit-log-${range}`, 'json')}
+            disabled={events.length === 0}
+          >
+            JSON
+          </Button>
         </div>
       </div>
 
-      {/* Table */}
       <Table<AuditEvent>
         columns={columns}
         data={events}
@@ -367,18 +408,17 @@ export default function AuditLogPage() {
         emptyMessage={emptyMessage}
       />
 
-      {/* Pagination footer — always show when there are events so the
-          page-size selector remains accessible on single-page results */}
       {events.length > 0 && (
         <div className="flex items-center justify-between mt-4">
           <div className="flex items-center gap-3">
             <span className="text-sm text-text-tertiary">
-              {events.length} events
+              {events.length} events on this page
+              {hasNext ? ' (more available)' : ''}
             </span>
             <div className="w-32">
               <Select
                 value={String(pageSize)}
-                onChange={handlePageSizeChange}
+                onChange={(value) => setPageSize(Number(value))}
                 options={PAGE_SIZE_OPTIONS}
                 fullWidth
               />

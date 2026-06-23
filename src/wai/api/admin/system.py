@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from wai.api.admin.common import KeyInfo, ROLE_SYSTEM_ADMIN
-from wai.api.admin.handler import require_role
+from wai.api.admin.handler import get_handler, require_role
 
 router = APIRouter()
 
@@ -78,6 +78,10 @@ class SystemUsageResponse(BaseModel):
     npu: list[SystemDeviceInfo] = Field(default_factory=list)
     storage: list[SystemStorageInfo] = Field(default_factory=list)
     configuration: dict[str, str] = Field(default_factory=dict)
+
+
+class ServerConfigResponse(BaseModel):
+    fallback_max_depth: int
 
 
 def _safe_config() -> dict[str, str]:
@@ -163,3 +167,9 @@ async def system_usage(_: KeyInfo = Depends(require_role(ROLE_SYSTEM_ADMIN))) ->
     if platform.system().lower() == "windows":
         _collect_windows(resp)
     return resp
+
+
+@router.get("/server-config", response_model=ServerConfigResponse)
+async def server_config(_: KeyInfo = Depends(require_role(ROLE_SYSTEM_ADMIN))) -> ServerConfigResponse:
+    h = get_handler()
+    return ServerConfigResponse(fallback_max_depth=h.fallback_max_depth)

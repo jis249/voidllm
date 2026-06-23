@@ -1,4 +1,5 @@
 import { twMerge } from 'tailwind-merge'
+import { USD_TO_INR_RATE } from './constants'
 
 /** Merge class names using tailwind-merge to resolve conflicting Tailwind classes. */
 export function cn(...classes: (string | false | null | undefined)[]): string {
@@ -26,6 +27,25 @@ export function formatBytes(n: number): string {
     unit += 1
   }
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
+}
+
+export type CostCurrency = 'USD' | 'INR'
+
+/** Convert a USD cost amount for display in the selected currency. */
+export function convertCostFromUsd(amountUsd: number, currency: CostCurrency): number {
+  return currency === 'INR' ? amountUsd * USD_TO_INR_RATE : amountUsd
+}
+
+/** Format a USD cost amount for cost reports (6 decimal places). */
+export function formatReportCost(amountUsd: number, currency: CostCurrency = 'USD'): string {
+  const amount = convertCostFromUsd(amountUsd, currency)
+  const locale = currency === 'INR' ? 'en-IN' : 'en-US'
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  }).format(amount)
 }
 
 /** Format a number as USD currency. */

@@ -35,7 +35,6 @@ models:
 settings:
   admin_key: ${WAI_ADMIN_KEY}
   encryption_key: ${WAI_ENCRYPTION_KEY}
-  license: ${WAI_LICENSE:-}
   rate_limit:
     login_max_attempts: 10
     login_window_minutes: 15

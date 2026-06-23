@@ -25,11 +25,12 @@ import type { ModelResponse, DeploymentResponse, CreateModelParams, UpdateModelP
 import { useModelHealth } from '../hooks/useModelHealth'
 import type { ModelHealthInfo } from '../hooks/useModelHealth'
 import { useToast } from '../hooks/useToast'
-import { useLicense } from '../hooks/useLicense'
+import { useServerConfig } from '../hooks/useServerConfig'
 import { providerBadgeVariant, isKnownProvider } from '../lib/providers'
 import type { ProviderKey } from '../lib/providers'
 import apiClient from '../api/client'
 import { cn } from '../lib/utils'
+import { ModelDetailDialog, resolveModelHealth } from './ModelDetailDialog'
 
 // ---------------------------------------------------------------------------
 // Module-level constants
@@ -127,6 +128,15 @@ function IconPauseCircle() {
       <circle cx="12" cy="12" r="10" />
       <line x1="10" y1="15" x2="10" y2="9" />
       <line x1="14" y1="15" x2="14" y2="9" />
+    </svg>
+  )
+}
+
+function IconEye() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }
@@ -478,9 +488,9 @@ function CreateModelDialog({ open, onClose }: CreateModelDialogProps) {
   const createModel = useCreateModel()
   const createDeployment = useCreateDeployment()
   const { toast } = useToast()
-  const { data: license } = useLicense()
+  const { data: serverConfig } = useServerConfig()
   const { data: modelsData } = useModels()
-  const hasFallbackFeature = license?.features.includes('fallback_chains') ?? false
+  const fallbackEnabled = (serverConfig?.fallback_max_depth ?? 0) > 0
 
   function handleClose() {
     setMode('single')
@@ -836,19 +846,14 @@ function CreateModelDialog({ open, onClose }: CreateModelDialogProps) {
                 options={fallbackOptions}
                 value={fallbackModelName}
                 onChange={setFallbackModelName}
-                disabled={isPending || !hasFallbackFeature}
+                disabled={isPending || !fallbackEnabled}
               />
-              {!hasFallbackFeature && (
-                <p className="text-xs text-text-tertiary mt-1">
-                  Available with an Enterprise license.
-                </p>
-              )}
-              {hasFallbackFeature && license?.fallback_max_depth === 0 && (
+              {!fallbackEnabled && (
                 <p className="text-xs text-amber-400 mt-1">
-                  Fallback is configured but disabled. Set fallback_max_depth in your server config to enable.
+                  Fallback is disabled. Set fallback_max_depth in your server config to enable.
                 </p>
               )}
-              {hasFallbackFeature && (license?.fallback_max_depth ?? 0) > 0 && (
+              {fallbackEnabled && (
                 <p className="text-xs text-text-tertiary mt-1">
                   When this model fails, requests automatically retry on the fallback model.
                 </p>
@@ -1194,9 +1199,9 @@ function EditModelDialog({ model, onClose }: EditModelDialogProps) {
 
   const updateModel = useUpdateModel()
   const { toast } = useToast()
-  const { data: license } = useLicense()
+  const { data: serverConfig } = useServerConfig()
   const { data: modelsData } = useModels()
-  const hasFallbackFeature = license?.features.includes('fallback_chains') ?? false
+  const fallbackEnabled = (serverConfig?.fallback_max_depth ?? 0) > 0
 
   const isAzure = provider === 'azure'
 
@@ -1395,19 +1400,14 @@ function EditModelDialog({ model, onClose }: EditModelDialogProps) {
             options={fallbackOptions}
             value={fallbackModelName}
             onChange={setFallbackModelName}
-            disabled={updateModel.isPending || !hasFallbackFeature}
+            disabled={updateModel.isPending || !fallbackEnabled}
           />
-          {!hasFallbackFeature && (
-            <p className="text-xs text-text-tertiary mt-1">
-              Available with an Enterprise license.
-            </p>
-          )}
-          {hasFallbackFeature && license?.fallback_max_depth === 0 && (
+          {!fallbackEnabled && (
             <p className="text-xs text-amber-400 mt-1">
-              Fallback is configured but disabled. Set fallback_max_depth in your server config to enable.
+              Fallback is disabled. Set fallback_max_depth in your server config to enable.
             </p>
           )}
-          {hasFallbackFeature && (license?.fallback_max_depth ?? 0) > 0 && (
+          {fallbackEnabled && (
             <p className="text-xs text-text-tertiary mt-1">
               When this model fails, requests automatically retry on the fallback model.
             </p>
@@ -1439,6 +1439,7 @@ function EditModelDialog({ model, onClose }: EditModelDialogProps) {
 // ---------------------------------------------------------------------------
 
 export default function ModelsPage() {
+  const [detailModel, setDetailModel] = useState<ModelResponse | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editModel, setEditModel] = useState<ModelResponse | null>(null)
   const [deleteModelId, setDeleteModelId] = useState<string | null>(null)
@@ -1471,7 +1472,14 @@ export default function ModelsPage() {
       key: 'name',
       header: 'Name',
       render: (row) => (
-        <span className="font-mono text-text-primary text-sm">{row.name}</span>
+        <button
+          type="button"
+          onClick={() => setDetailModel(row)}
+          className="font-mono text-text-primary text-sm hover:text-accent transition-colors text-left"
+          title="View model details"
+        >
+          {row.name}
+        </button>
       ),
     },
     {
@@ -1509,27 +1517,7 @@ export default function ModelsPage() {
       header: 'Health',
       render: (row) => {
         if (row.deployments?.length) {
-          const depHealths = row.deployments
-            .map((d) => healthByName.get(`${row.name}/${d.name}`))
-            .filter((h): h is ModelHealthInfo => h != null)
-          if (depHealths.length === 0) return <HealthBadge info={undefined} />
-          const allUnhealthy = depHealths.every((h) => h.status === 'unhealthy')
-          const allHealthy = depHealths.every((h) => h.status === 'healthy')
-          const allUnknown = depHealths.every((h) => h.status === 'unknown')
-          const status = allUnknown ? 'unknown' : allUnhealthy ? 'unhealthy' : allHealthy ? 'healthy' : 'degraded'
-          const avgLatency = Math.round(
-            depHealths.reduce((sum, h) => sum + (h.latency_ms ?? 0), 0) / depHealths.length,
-          )
-          const syntheticInfo: ModelHealthInfo = {
-            name: row.name,
-            status,
-            latency_ms: avgLatency,
-            last_check: '',
-            health_ok: null,
-            models_ok: null,
-            functional_ok: null,
-          }
-          return <HealthBadge info={syntheticInfo} />
+          return <HealthBadge info={resolveModelHealth(row, healthByName)} />
         }
         return <HealthBadge info={healthByName.get(row.name)} />
       },
@@ -1601,10 +1589,18 @@ export default function ModelsPage() {
       key: 'actions',
       header: '',
       align: 'right',
-      render: (row) => {
-        if (row.source !== 'api') return null
-        return (
-          <div className="flex items-center justify-end gap-1">
+      render: (row) => (
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => setDetailModel(row)}
+            title="View details"
+            className="p-1.5 rounded-md text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors"
+          >
+            <IconEye />
+          </button>
+          {row.source === 'api' && (
+            <>
             {!row.deployments?.length && row.strategy && (
               <button
                 type="button"
@@ -1635,9 +1631,10 @@ export default function ModelsPage() {
             >
               <IconTrash />
             </button>
-          </div>
-        )
-      },
+            </>
+          )}
+        </div>
+      ),
     },
   ]
 
@@ -1807,6 +1804,13 @@ export default function ModelsPage() {
             </div>
           )
         }}
+      />
+
+      <ModelDetailDialog
+        model={detailModel}
+        healthByName={healthByName}
+        onClose={() => setDetailModel(null)}
+        onEdit={setEditModel}
       />
 
       <CreateModelDialog

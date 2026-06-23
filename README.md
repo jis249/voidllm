@@ -30,7 +30,7 @@ python -m wai --config wai.yaml
 
 - **Config file:** `wai.yaml` (or set `WAI_CONFIG`)
 - **Secrets:** `.env.local` beside the config file
-- **Environment variables:** `WAI_ADMIN_KEY`, `WAI_ENCRYPTION_KEY`, `WAI_LICENSE`, `POSTGRES_PASSWORD`
+- **Environment variables:** `WAI_ADMIN_KEY`, `WAI_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`
 
 ## API
 

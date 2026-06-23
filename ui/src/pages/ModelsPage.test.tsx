@@ -59,20 +59,11 @@ const MOCK_MODELS_LIST: MockModelResponse[] = [
   makeChatModel({ id: 'model-4', name: 'text-embed-ada', type: 'embedding', provider: 'openai', base_url: 'https://api.openai.com/v1' }),
 ]
 
-const MOCK_LICENSE_NO_FALLBACK = {
-  edition: 'community',
-  valid: true,
-  features: [] as string[],
-  max_orgs: 1,
-  max_teams: 3,
+const MOCK_SERVER_CONFIG_DISABLED = {
+  fallback_max_depth: 0,
 }
 
-const MOCK_LICENSE_WITH_FALLBACK = {
-  edition: 'enterprise',
-  valid: true,
-  features: ['fallback_chains', 'audit_logs'],
-  max_orgs: -1,
-  max_teams: -1,
+const MOCK_SERVER_CONFIG_ENABLED = {
   fallback_max_depth: 3,
 }
 
@@ -141,7 +132,7 @@ function setupFetchMock(entries: FetchMockEntry[], capturedBodies?: Map<string, 
   }))
 }
 
-function defaultEntries(licensePayload = MOCK_LICENSE_NO_FALLBACK, modelsPayload = { data: MOCK_MODELS_LIST, has_more: false }): FetchMockEntry[] {
+function defaultEntries(serverConfigPayload = MOCK_SERVER_CONFIG_DISABLED, modelsPayload = { data: MOCK_MODELS_LIST, has_more: false }): FetchMockEntry[] {
   return [
     {
       // GET-only models list (no method guard needed here — POST entries placed BEFORE
@@ -151,8 +142,8 @@ function defaultEntries(licensePayload = MOCK_LICENSE_NO_FALLBACK, modelsPayload
       response: modelsPayload,
     },
     {
-      matcher: (u) => u.includes('/api/v1/license'),
-      response: licensePayload,
+      matcher: (u) => u.includes('/api/v1/server-config'),
+      response: serverConfigPayload,
     },
     {
       matcher: (u) => u.includes('/api/v1/models/health'),
@@ -232,7 +223,7 @@ function getFallbackCombobox(container: HTMLElement | Document = document): HTML
 }
 
 // ---------------------------------------------------------------------------
-// Tests: CreateModelDialog — without Enterprise license
+// Tests: CreateModelDialog — fallback disabled
 // ---------------------------------------------------------------------------
 
 describe('CreateModelDialog — Fallback Model field', () => {
@@ -240,9 +231,9 @@ describe('CreateModelDialog — Fallback Model field', () => {
     vi.restoreAllMocks()
   })
 
-  describe('without fallback_chains license feature', () => {
-    it('disables the Fallback Model select when license does not include fallback_chains', async () => {
-      setupFetchMock(defaultEntries(MOCK_LICENSE_NO_FALLBACK))
+  describe('when fallback_max_depth is 0', () => {
+    it('disables the Fallback Model select when fallback is disabled in server config', async () => {
+      setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_DISABLED))
       renderModelsPage()
 
       await openCreateDialog()
@@ -256,19 +247,19 @@ describe('CreateModelDialog — Fallback Model field', () => {
       })
     })
 
-    it('shows "Enterprise" helper text when license is missing fallback_chains', async () => {
-      setupFetchMock(defaultEntries(MOCK_LICENSE_NO_FALLBACK))
+    it('shows helper text when fallback is disabled in server config', async () => {
+      setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_DISABLED))
       renderModelsPage()
 
       await openCreateDialog()
       await switchToLoadBalancedTab()
 
       await waitFor(() => {
-        expect(screen.getByText(/available with an enterprise license/i)).toBeInTheDocument()
+        expect(screen.getByText(/fallback is disabled/i)).toBeInTheDocument()
       })
     })
 
-    it('does not send fallback_model_name on submit when license is missing and field is left at default', async () => {
+    it('does not send fallback_model_name on submit when fallback is disabled and field is left at default', async () => {
       const capturedBodies = new Map<string, string>()
       const createdModel = makeChatModel({ id: 'new-model', name: 'my-lb-model' })
       setupFetchMock(
@@ -278,7 +269,7 @@ describe('CreateModelDialog — Fallback Model field', () => {
             method: 'POST',
             response: createdModel,
           },
-          ...defaultEntries(MOCK_LICENSE_NO_FALLBACK),
+          ...defaultEntries(MOCK_SERVER_CONFIG_DISABLED),
         ],
         capturedBodies,
       )
@@ -301,7 +292,7 @@ describe('CreateModelDialog — Fallback Model field', () => {
       await waitFor(() => expect(capturedBodies.has('POST:/api/v1/models')).toBe(true))
 
       const body = JSON.parse(capturedBodies.get('POST:/api/v1/models')!)
-      // When license is missing and field untouched, fallback_model_name is absent
+      // When fallback is disabled and field untouched, fallback_model_name is absent
       // because `if (fallbackModelName) params.fallback_model_name = fallbackModelName`
       // and the default value is '' (falsy).
       expect(body).not.toHaveProperty('fallback_model_name')
@@ -309,12 +300,12 @@ describe('CreateModelDialog — Fallback Model field', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // CreateModelDialog — with Enterprise license
+  // CreateModelDialog — fallback enabled
   // ---------------------------------------------------------------------------
 
-  describe('with fallback_chains license feature', () => {
-    it('enables the Fallback Model select when license includes fallback_chains', async () => {
-      setupFetchMock(defaultEntries(MOCK_LICENSE_WITH_FALLBACK))
+  describe('when fallback_max_depth is greater than 0', () => {
+    it('enables the Fallback Model select when fallback is enabled in server config', async () => {
+      setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_ENABLED))
       renderModelsPage()
 
       await openCreateDialog()
@@ -327,8 +318,8 @@ describe('CreateModelDialog — Fallback Model field', () => {
       })
     })
 
-    it('shows helpful description text when license includes fallback_chains', async () => {
-      setupFetchMock(defaultEntries(MOCK_LICENSE_WITH_FALLBACK))
+    it('shows helpful description text when fallback is enabled in server config', async () => {
+      setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_ENABLED))
       renderModelsPage()
 
       await openCreateDialog()
@@ -340,7 +331,7 @@ describe('CreateModelDialog — Fallback Model field', () => {
     })
 
     it('shows None option and other chat models, excludes embedding models and current model name', async () => {
-      setupFetchMock(defaultEntries(MOCK_LICENSE_WITH_FALLBACK))
+      setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_ENABLED))
       renderModelsPage()
 
       await openCreateDialog()
@@ -386,7 +377,7 @@ describe('CreateModelDialog — Fallback Model field', () => {
             method: 'POST',
             response: createdModel,
           },
-          ...defaultEntries(MOCK_LICENSE_WITH_FALLBACK),
+          ...defaultEntries(MOCK_SERVER_CONFIG_ENABLED),
         ],
         capturedBodies,
       )
@@ -432,7 +423,7 @@ describe('CreateModelDialog — Fallback Model field', () => {
             method: 'POST',
             response: createdModel,
           },
-          ...defaultEntries(MOCK_LICENSE_WITH_FALLBACK),
+          ...defaultEntries(MOCK_SERVER_CONFIG_ENABLED),
         ],
         capturedBodies,
       )
@@ -494,7 +485,7 @@ describe('EditModelDialog — Fallback Model field', () => {
       data: [modelWithFallback, ...MOCK_MODELS_LIST.slice(1)],
       has_more: false,
     }
-    setupFetchMock(defaultEntries(MOCK_LICENSE_WITH_FALLBACK, modelsData))
+    setupFetchMock(defaultEntries(MOCK_SERVER_CONFIG_ENABLED, modelsData))
     renderModelsPage()
 
     await openEditDialogForModel('gpt-4o')
@@ -518,7 +509,7 @@ describe('EditModelDialog — Fallback Model field', () => {
     }
     setupFetchMock(
       [
-        ...defaultEntries(MOCK_LICENSE_WITH_FALLBACK, modelsData),
+        ...defaultEntries(MOCK_SERVER_CONFIG_ENABLED, modelsData),
         {
           matcher: (u) => u.includes('/api/v1/models/model-1'),
           method: 'PATCH',
@@ -556,7 +547,7 @@ describe('EditModelDialog — Fallback Model field', () => {
     }
     setupFetchMock(
       [
-        ...defaultEntries(MOCK_LICENSE_WITH_FALLBACK, modelsData),
+        ...defaultEntries(MOCK_SERVER_CONFIG_ENABLED, modelsData),
         {
           matcher: (u) => u.includes('/api/v1/models/model-1'),
           method: 'PATCH',
@@ -600,7 +591,7 @@ describe('EditModelDialog — Fallback Model field', () => {
     }
     setupFetchMock(
       [
-        ...defaultEntries(MOCK_LICENSE_WITH_FALLBACK, modelsData),
+        ...defaultEntries(MOCK_SERVER_CONFIG_ENABLED, modelsData),
         {
           matcher: (u) => u.includes('/api/v1/models/model-1'),
           method: 'PATCH',

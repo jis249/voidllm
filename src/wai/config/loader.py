@@ -247,8 +247,6 @@ def _from_dict(data: dict[str, Any]) -> Config:
         settings=SettingsConfig(
             admin_key=str(settings_raw.get("admin_key") or ""),
             encryption_key=str(settings_raw.get("encryption_key") or ""),
-            license=str(settings_raw.get("license") or ""),
-            license_file=str(settings_raw.get("license_file") or ""),
             bootstrap=BootstrapConfig(
                 org_name=str(bootstrap_raw.get("org_name") or ""),
                 org_slug=str(bootstrap_raw.get("org_slug") or ""),
@@ -325,7 +323,6 @@ def _load_defaults() -> Config:
         settings=SettingsConfig(
             admin_key=os.environ.get("WAI_ADMIN_KEY", ""),
             encryption_key=os.environ.get("WAI_ENCRYPTION_KEY", ""),
-            license=os.environ.get("WAI_LICENSE", ""),
         ),
         database=DatabaseConfig(
             driver="postgres",
@@ -352,14 +349,9 @@ def load(path: str = "") -> tuple[Config, bool]:
 
     cfg = _from_dict(data)
 
-    if cfg.settings.license_file and not cfg.settings.license:
-        cfg.settings.license = Path(cfg.settings.license_file).read_text(encoding="utf-8").strip()
-
     if not cfg.settings.admin_key:
         cfg.settings.admin_key = os.environ.get("WAI_ADMIN_KEY", "")
     if not cfg.settings.encryption_key:
         cfg.settings.encryption_key = os.environ.get("WAI_ENCRYPTION_KEY", "")
-    if not cfg.settings.license:
-        cfg.settings.license = os.environ.get("WAI_LICENSE", "")
 
     return cfg, False

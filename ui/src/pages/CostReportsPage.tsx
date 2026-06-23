@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { StatCard } from '../components/ui/StatCard'
 import { Table } from '../components/ui/Table'
@@ -7,7 +7,8 @@ import { Button } from '../components/ui/Button'
 import { useMe } from '../hooks/useMe'
 import { useUsage, useMyUsage } from '../hooks/useUsage'
 import type { UsageDataPoint } from '../hooks/useUsage'
-import { formatNumber } from '../lib/utils'
+import { formatNumber, formatReportCost, type CostCurrency } from '../lib/utils'
+import { COST_CURRENCY_STORAGE_KEY } from '../lib/constants'
 import { exportData } from '../lib/export'
 
 const COST_MODEL_HEADERS = [
@@ -20,6 +21,13 @@ const COST_MODEL_HEADERS = [
 
 const TIME_RANGES = ['7d', '30d', '90d'] as const
 type TimeRange = (typeof TIME_RANGES)[number]
+
+const COST_CURRENCIES = ['USD', 'INR'] as const
+
+const CURRENCY_LABELS: Record<CostCurrency, string> = {
+  USD: '$ USD',
+  INR: '₹ INR',
+}
 
 const RANGE_LABELS: Record<TimeRange, string> = {
   '7d': 'Last 7 days',
@@ -62,13 +70,9 @@ function costForDailyUsage(usage: UsageDataPoint): number {
     : estimateCostFromTokens(usage, GPT54_PRICING)
 }
 
-function formatReportCost(n: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 6,
-    maximumFractionDigits: 6,
-  }).format(n)
+function readStoredCurrency(): CostCurrency {
+  const stored = localStorage.getItem(COST_CURRENCY_STORAGE_KEY)
+  return stored === 'INR' ? 'INR' : 'USD'
 }
 
 function getTimeRange(range: TimeRange): { from: string; to: string } {
@@ -135,8 +139,7 @@ interface ModelCostRow extends UsageDataPoint {
   avg_cost_per_request: number
 }
 
-function buildModelColumns(totalCost: number): Column<ModelCostRow>[] {
-  void totalCost // referenced through row.pct pre-computed
+function buildModelColumns(formatCost: (amountUsd: number) => string): Column<ModelCostRow>[] {
   return [
     {
       key: 'group_key',
@@ -150,7 +153,7 @@ function buildModelColumns(totalCost: number): Column<ModelCostRow>[] {
       header: 'Total Cost',
       align: 'right',
       render: (row) => (
-        <span className="text-text-primary font-medium">{formatReportCost(row.cost_estimate)}</span>
+        <span className="text-text-primary font-medium">{formatCost(row.cost_estimate)}</span>
       ),
     },
     {
@@ -176,8 +179,8 @@ function buildModelColumns(totalCost: number): Column<ModelCostRow>[] {
       render: (row) => (
         <span className="text-text-tertiary">
           {row.total_requests > 0
-            ? formatReportCost(row.cost_estimate / row.total_requests)
-            : formatReportCost(0)}
+            ? formatCost(row.cost_estimate / row.total_requests)
+            : formatCost(0)}
         </span>
       ),
     },
@@ -192,7 +195,7 @@ interface DayCostRow extends UsageDataPoint {
   change_pct: number | null
 }
 
-const dayColumns: Column<DayCostRow>[] = [
+const dayColumns = (formatCost: (amountUsd: number) => string): Column<DayCostRow>[] => [
   {
     key: 'group_key',
     header: 'Date',
@@ -205,7 +208,7 @@ const dayColumns: Column<DayCostRow>[] = [
     header: 'Cost',
     align: 'right',
     render: (row) => (
-      <span className="text-text-primary font-medium">{formatReportCost(row.cost_estimate)}</span>
+      <span className="text-text-primary font-medium">{formatCost(row.cost_estimate)}</span>
     ),
   },
   {
@@ -223,8 +226,8 @@ const dayColumns: Column<DayCostRow>[] = [
     render: (row) => (
       <span className="text-text-tertiary">
         {row.total_requests > 0
-          ? formatReportCost(row.cost_estimate / row.total_requests)
-          : formatReportCost(0)}
+          ? formatCost(row.cost_estimate / row.total_requests)
+          : formatCost(0)}
       </span>
     ),
   },
@@ -259,6 +262,7 @@ const dayColumns: Column<DayCostRow>[] = [
 
 export default function CostReportsPage() {
   const [range, setRange] = useState<TimeRange>('30d')
+  const [currency, setCurrency] = useState<CostCurrency>(readStoredCurrency)
   const { data: me } = useMe()
   const orgId = me?.org_id ?? ''
   const canViewOrgUsage = me?.is_system_admin === true || me?.role === 'org_admin'
@@ -313,7 +317,41 @@ export default function CostReportsPage() {
   }, [dayUsage])
 
   const dayRowsDesc = useMemo(() => [...dayRows].reverse(), [dayRows])
-  const modelColumns = useMemo(() => buildModelColumns(totalCost), [totalCost])
+
+  const formatCost = useCallback(
+    (amountUsd: number) => formatReportCost(amountUsd, currency),
+    [currency],
+  )
+  const modelColumns = useMemo(() => buildModelColumns(formatCost), [formatCost])
+  const dailyColumns = useMemo(() => dayColumns(formatCost), [formatCost])
+
+  const exportHeaders = useMemo(
+    () =>
+      COST_MODEL_HEADERS.map((header) =>
+        header.key === 'cost_estimate' || header.key === 'avg_cost_per_request'
+          ? { ...header, label: `${header.label} (${currency})` }
+          : header,
+      ),
+    [currency],
+  )
+
+  const exportRows = useMemo(
+    () =>
+      modelRows.map((row) => ({
+        ...row,
+        cost_estimate: formatCost(row.cost_estimate),
+        avg_cost_per_request:
+          row.total_requests > 0
+            ? formatCost(row.cost_estimate / row.total_requests)
+            : formatCost(0),
+      })),
+    [modelRows, formatCost],
+  )
+
+  const handleCurrencyChange = (next: CostCurrency) => {
+    setCurrency(next)
+    localStorage.setItem(COST_CURRENCY_STORAGE_KEY, next)
+  }
 
   const isModelLoading = modelLoading && !!me && (canViewOrgUsage ? !!orgId : true)
   const isDayLoading = dayLoading && !!me && (canViewOrgUsage ? !!orgId : true)
@@ -346,12 +384,30 @@ export default function CostReportsPage() {
           ))}
         </div>
 
+        <div className="flex items-center gap-1 p-1 rounded-lg bg-bg-tertiary">
+          {COST_CURRENCIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => handleCurrencyChange(c)}
+              className={[
+                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                currency === c
+                  ? 'bg-bg-secondary text-text-primary shadow-sm'
+                  : 'text-text-tertiary hover:text-text-secondary',
+              ].join(' ')}
+            >
+              {CURRENCY_LABELS[c]}
+            </button>
+          ))}
+        </div>
+
         <div className="sm:ml-auto flex gap-2">
           <Button
             variant="secondary"
             size="sm"
             icon={<IconDownload />}
-            onClick={() => exportData(modelRows as unknown as Record<string, unknown>[], COST_MODEL_HEADERS, `wai-cost-by-model-${range}`, 'csv')}
+            onClick={() => exportData(exportRows as unknown as Record<string, unknown>[], exportHeaders, `wai-cost-by-model-${range}`, 'csv')}
             disabled={modelRows.length === 0}
           >
             CSV
@@ -360,7 +416,7 @@ export default function CostReportsPage() {
             variant="secondary"
             size="sm"
             icon={<IconDownload />}
-            onClick={() => exportData(modelRows as unknown as Record<string, unknown>[], COST_MODEL_HEADERS, `wai-cost-by-model-${range}`, 'json')}
+            onClick={() => exportData(exportRows as unknown as Record<string, unknown>[], exportHeaders, `wai-cost-by-model-${range}`, 'json')}
             disabled={modelRows.length === 0}
           >
             JSON
@@ -372,13 +428,13 @@ export default function CostReportsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatCard
           label="Total Cost"
-          value={isModelLoading ? '—' : formatReportCost(totalCost)}
+          value={isModelLoading ? '—' : formatCost(totalCost)}
           icon={<IconDollar />}
           iconColor="purple"
         />
         <StatCard
           label="Avg Cost / Day"
-          value={isModelLoading ? '—' : formatReportCost(avgCostPerDay)}
+          value={isModelLoading ? '—' : formatCost(avgCostPerDay)}
           icon={<IconTrendingDown />}
           iconColor="blue"
         />
@@ -406,7 +462,7 @@ export default function CostReportsPage() {
       <div>
         <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-4">Daily Cost Trend</h2>
         <Table<DayCostRow>
-          columns={dayColumns}
+          columns={dailyColumns}
           data={dayRowsDesc}
           keyExtractor={(row) => row.group_key}
           loading={isDayLoading}

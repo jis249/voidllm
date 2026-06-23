@@ -11,7 +11,6 @@ from wai.api.admin import (
     deployments,
     invites,
     keys,
-    license,
     mcp_access,
     mcp_handler,
     mcp_servers,
@@ -85,7 +84,6 @@ def create_admin_router() -> APIRouter:
     authed.include_router(mcp_servers.router, prefix=API_PREFIX)
     authed.include_router(org_sso.router, prefix=API_PREFIX)
     authed.include_router(oidc.router, prefix=API_PREFIX)
-    authed.include_router(license.router, prefix=API_PREFIX)
     authed.include_router(update.router, prefix=API_PREFIX)
     authed.include_router(mcp_handler.router, prefix=API_PREFIX)
 

@@ -16,7 +16,6 @@ ui/.vite/
 
 # Config (never commit secrets)
 wai.yaml
-*.license.jwt
 
 # Database
 *.db

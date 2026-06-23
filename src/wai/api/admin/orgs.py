@@ -17,7 +17,6 @@ from wai.api.admin.common import (
     forbidden,
     has_role,
     internal_error,
-    limit_reached,
     not_found,
     parse_pagination,
     unauthorized,
@@ -100,11 +99,6 @@ async def create_org(
         raise bad_request("slug is required")
     if not SLUG_RE.match(body.slug):
         raise bad_request("slug must be lowercase alphanumeric with hyphens, 2-63 characters")
-    lic = h.license.load()
-    if lic.max_orgs > 0:
-        count = await repo.count_orgs(h.db)
-        if count >= lic.max_orgs:
-            raise limit_reached("organization limit reached for your plan")
     try:
         org = await repo.create_org(
             h.db,

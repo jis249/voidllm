@@ -131,6 +131,18 @@ function IconDollar() {
   )
 }
 
+function IconClipboardList() {
+  return (
+    <svg {...iconProps}>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <line x1="9" y1="12" x2="15" y2="12" />
+      <line x1="9" y1="16" x2="15" y2="16" />
+      <line x1="9" y1="8" x2="10" y2="8" />
+    </svg>
+  )
+}
+
 function IconBuilding() {
   return (
     <svg {...iconProps}>
@@ -200,6 +212,7 @@ function buildNavigation(): NavGroup[] {
       items: [
         { label: 'Usage', path: '/usage', icon: <IconBarChart /> },
         { label: 'Cost Reports', path: '/cost-reports', icon: <IconDollar /> },
+        { label: 'Audit Log', path: '/audit-log', icon: <IconClipboardList />, minRole: 'org_admin' },
       ],
     },
     {

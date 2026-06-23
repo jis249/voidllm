@@ -128,8 +128,6 @@ class RateLimitConfig:
 class SettingsConfig:
     admin_key: str = ""
     encryption_key: str = ""
-    license: str = ""
-    license_file: str = ""
     bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
     usage: UsageConfig = field(default_factory=UsageConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
